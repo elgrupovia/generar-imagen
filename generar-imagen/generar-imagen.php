@@ -145,27 +145,35 @@ function gi_render_handler(WP_REST_Request $request) {
         continue;
       }
 
-      // Redimensionar foto a celda completa (sin recorte)
-      $lay->resizeImage($cellW, $cellH, Imagick::FILTER_LANCZOS, 1, false);
+      // Redimensionar foto manteniendo aspecto
+      $lay->thumbnailImage($cellW, $cellH, true);
 
-      // Crear fondo blanco de la celda
+      // Crear frame con fondo blanco
       $frame = new Imagick();
       $frame->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
       $frame->setImageFormat('png');
-      $frame->compositeImage($lay, Imagick::COMPOSITE_OVER, 0, 0);
 
-      // Crear máscara circular GRANDE (radius = mitad de celda)
+      // Centrar foto en el frame
+      $offX = intval(($cellW - $lay->getImageWidth()) / 2);
+      $offY = intval(($cellH - $lay->getImageHeight()) / 2);
+      $frame->compositeImage($lay, Imagick::COMPOSITE_OVER, $offX, $offY);
+
+      // Crear máscara: fondo transparente + círculo blanco
       $mask = new Imagick();
-      $mask->newImage($cellW, $cellH, new ImagickPixel('black'));
+      $mask->newImage($cellW, $cellH, new ImagickPixel('transparent'));
       $mask->setImageFormat('png');
 
       $draw = new ImagickDraw();
       $draw->setFillColor('white');
-      $radius = $cellW / 2;
-      $draw->circle($cellW/2, $cellH/2, $cellW/2 + $radius, $cellH/2);
+      $draw->setStrokeColor('white');
+      $cx = $cellW / 2;
+      $cy = $cellH / 2;
+      $r = min($cellW, $cellH) / 2;
+      $draw->circle($cx, $cy, $cx + $r, $cy);
       $mask->drawImage($draw);
 
-      // Aplicar máscara como alpha
+      // Copiar alfa de máscara a frame
+      $frame->setImageAlphaChannel(Imagick::ALPHACHANNEL_OFF);
       $frame->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0);
 
       // Componer en canvas principal
