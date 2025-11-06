@@ -8,13 +8,9 @@
 
 if (!defined('ABSPATH')) exit;
 
-// Log de inicio
 error_log('✅ Plugin Generar Imagen cargado correctamente');
 
-// Registrar endpoint
 add_action('rest_api_init', function () {
-  error_log('✅ Registrando ruta imagen/v1/generar');
-
   register_rest_route('imagen/v1', '/generar', [
     'methods'  => 'POST',
     'callback' => 'gi_render_handler',
@@ -24,7 +20,7 @@ add_action('rest_api_init', function () {
 
 function gi_render_handler(WP_REST_Request $request) {
   if (!class_exists('Imagick')) {
-    return new WP_REST_Response(['error' => 'Imagick no disponible en el servidor'], 500);
+    return new WP_REST_Response(['error' => 'Imagick no disponible'], 500);
   }
 
   $token = $request->get_param('token');
@@ -35,7 +31,7 @@ function gi_render_handler(WP_REST_Request $request) {
   $payload = $request->get_json_params();
   if (!$payload) return new WP_REST_Response(['error' => 'JSON vacío'], 400);
 
-  // --- Canvas base ---
+  // Canvas
   $W = min(intval($payload['canvas']['width'] ?? 1600), 4000);
   $H = min(intval($payload['canvas']['height'] ?? 900), 4000);
   $bg = $payload['canvas']['background'] ?? '#ffffff';
@@ -44,7 +40,7 @@ function gi_render_handler(WP_REST_Request $request) {
   $img->newImage($W, $H, new ImagickPixel($bg));
   $img->setImageFormat('png');
 
-  // --- Función para descargar imágenes externas ---
+  // Función para descargar imágenes
   $download_image = function(string $url) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -52,21 +48,24 @@ function gi_render_handler(WP_REST_Request $request) {
       CURLOPT_FOLLOWLOCATION => true,
       CURLOPT_TIMEOUT => 20,
       CURLOPT_SSL_VERIFYPEER => false,
-      CURLOPT_USERAGENT => 'WordPress/GenerarImagen (+https://grupovia.net)',
+      CURLOPT_USERAGENT => 'WordPress/GenerarImagen',
     ]);
     $data = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    error_log("📸 Descarga $url → status=$status bytes=" . strlen($data));
     curl_close($ch);
 
-    if (!$data || $status != 200) return null;
+    if (!$data || $status != 200) {
+      error_log("❌ Error descargando $url: HTTP $status");
+      return null;
+    }
 
-    $tmp = wp_tempnam($url);
+    $tmp = wp_tempnam();
     file_put_contents($tmp, $data);
 
     try {
       $m = new Imagick($tmp);
     } catch (\Throwable $e) {
+      error_log("❌ Error cargando imagen en Imagick: " . $e->getMessage());
       @unlink($tmp);
       return null;
     }
@@ -76,7 +75,7 @@ function gi_render_handler(WP_REST_Request $request) {
     return $m;
   };
 
-  // --- Procesar LAYERS ---
+  // LAYERS
   if (!empty($payload['layers'])) {
     foreach ($payload['layers'] as $layer) {
       if (($layer['type'] ?? '') === 'image' && !empty($layer['url'])) {
@@ -94,18 +93,18 @@ function gi_render_handler(WP_REST_Request $request) {
           $lay->evaluateImage(Imagick::EVALUATE_MULTIPLY, floatval($layer['opacity']), Imagick::CHANNEL_ALPHA);
         }
 
-        $img->compositeImage($lay, Imagick::COMPOSITE_DEFAULT, intval($layer['x'] ?? 0), intval($layer['y'] ?? 0));
+        $img->compositeImage($lay, Imagick::COMPOSITE_OVER, intval($layer['x'] ?? 0), intval($layer['y'] ?? 0));
         $lay->destroy();
       } elseif (($layer['type'] ?? '') === 'text' && !empty($layer['text'])) {
         $draw = new ImagickDraw();
         $draw->setFillColor(new ImagickPixel($layer['color'] ?? '#000000'));
         $draw->setFontSize(intval($layer['size'] ?? 40));
-        $img->annotateImage($draw, intval($layer['x'] ?? 0), intval($layer['y'] ?? 0), floatval($layer['rotation'] ?? 0), $layer['text']);
+        $img->annotateImage($draw, intval($layer['x'] ?? 0), intval($layer['y'] ?? 0), 0, $layer['text']);
       }
     }
   }
 
-  // --- Procesar SPEAKERS ---
+  // SPEAKERS (GRID CIRCULAR)
   else if (!empty($payload['speakers']) && is_array($payload['speakers'])) {
     $speakers = $payload['speakers'];
     $n = count($speakers);
@@ -126,6 +125,8 @@ function gi_render_handler(WP_REST_Request $request) {
     $cellW = intval(($gridW - ($cols-1)*$gutter) / $cols);
     $cellH = intval(($gridH - ($rows-1)*$gutter) / $rows);
 
+    error_log("📐 Grid: {$cols}x{$rows} | Celda: {$cellW}x{$cellH}");
+
     for ($i=0; $i<$n; $i++) {
       $c = $i % $cols;
       $r = intdiv($i, $cols);
@@ -133,33 +134,50 @@ function gi_render_handler(WP_REST_Request $request) {
       $y = $padding + $r*($cellH + $gutter);
 
       $url = $speakers[$i]['photo'] ?? null;
-      if (!$url) continue;
-      $lay = $download_image($url);
-      if (!$lay) continue;
+      if (!$url) {
+        error_log("⚠️ Speaker $i sin foto");
+        continue;
+      }
 
+      $lay = $download_image($url);
+      if (!$lay) {
+        error_log("⚠️ Error descargando foto speaker $i: $url");
+        continue;
+      }
+
+      // Resize manteniendo relación
       $lay->thumbnailImage($cellW, $cellH, true, true);
 
+      // Crear fondo blanco
       $frame = new Imagick();
       $frame->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
       $frame->setImageFormat('png');
 
-      $offX = intval(($cellW - $lay->getImageWidth())/2);
-      $offY = intval(($cellH - $lay->getImageHeight())/2);
-      $frame->compositeImage($lay, Imagick::COMPOSITE_DEFAULT, $offX, $offY);
+      $offX = intval(($cellW - $lay->getImageWidth()) / 2);
+      $offY = intval(($cellH - $lay->getImageHeight()) / 2);
+      $frame->compositeImage($lay, Imagick::COMPOSITE_OVER, $offX, $offY);
 
-      // Recorte circular
+      // --- MÁSCARA CIRCULAR (MEJORADA) ---
       $mask = new Imagick();
       $mask->newImage($cellW, $cellH, new ImagickPixel('transparent'));
-      $drawMask = new ImagickDraw();
-      $drawMask->setFillColor('white');
-      $drawMask->circle($cellW/2, $cellH/2, $cellW/2, 0);
-      $mask->drawImage($drawMask);
-      $frame->compositeImage($mask, Imagick::COMPOSITE_DSTIN, 0, 0);
-      $mask->destroy();
+      $mask->setImageFormat('png');
 
+      $draw = new ImagickDraw();
+      $draw->setFillColor('white');
+      $draw->circle($cellW/2, $cellH/2, $cellW/2, $cellH/2 - 0);
+      $mask->drawImage($draw);
+
+      // Aplicar máscara con COMPOSITE_DSTIN
+      $frame->compositeImage($mask, Imagick::COMPOSITE_DSTIN, 0, 0);
+
+      // Componer en canvas principal
       $img->compositeImage($frame, Imagick::COMPOSITE_OVER, $x, $y);
+
+      error_log("✅ Speaker $i colocado en ({$x}, {$y})");
+
       $lay->destroy();
       $frame->destroy();
+      $mask->destroy();
     }
 
     // Título
@@ -167,20 +185,16 @@ function gi_render_handler(WP_REST_Request $request) {
       $draw = new ImagickDraw();
       $draw->setFillColor('#111111');
       $draw->setFontSize(36);
-      $img->annotateImage($draw, $padding, $H - $padding/2, 0, $payload['event_title']);
+      $img->annotateImage($draw, $padding, $H - 30, 0, $payload['event_title']);
     }
-  }
-
-  else {
+  } else {
     return new WP_REST_Response(['error' => 'Debes enviar "layers" o "speakers"'], 400);
   }
 
-  // --- Salida final ---
+  // --- GUARDAR Y SUBIR ---
   $format = strtolower($payload['output']['format'] ?? 'jpg');
   $quality = intval($payload['output']['quality'] ?? 90);
   $filename = sanitize_file_name(($payload['output']['filename'] ?? ('collage-'.time())) . '.' . $format);
-
-  $img = $img->mergeImageLayers(Imagick::LAYERMETHOD_FLATTEN);
 
   if ($format === 'jpg' || $format === 'jpeg') {
     $img->setImageFormat('jpeg');
@@ -193,8 +207,11 @@ function gi_render_handler(WP_REST_Request $request) {
   }
 
   $blob = $img->getImagesBlob();
+  $img->destroy();
+
   $upload = wp_upload_bits($filename, null, $blob);
   if (!empty($upload['error'])) {
+    error_log("❌ Error en wp_upload_bits: " . $upload['error']);
     return new WP_REST_Response(['error' => 'Fallo subiendo a Medios'], 500);
   }
 
@@ -211,7 +228,7 @@ function gi_render_handler(WP_REST_Request $request) {
   wp_generate_attachment_metadata($attach_id, $upload['file']);
   $url = wp_get_attachment_url($attach_id);
 
-  error_log("✅ Imagen final guardada en: $url");
+  error_log("✅ Imagen generada: $url");
 
   return new WP_REST_Response(['url' => $url, 'attachment_id' => $attach_id], 200);
 }
