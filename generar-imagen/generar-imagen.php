@@ -60,6 +60,7 @@ function gi_render_handler(WP_REST_Request $request) {
   ]);
   $data = curl_exec($ch);
   $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  error_log("📸 Descarga $url → status=$status bytes=" . strlen($data));
   curl_close($ch);
 
   if (!$data || $status != 200) return null;
