@@ -167,7 +167,7 @@ function gi_render_handler(WP_REST_Request $request) {
       $mask->destroy();
 
       // Componer en el canvas
-      $img->compositeImage($frame, Imagick::COMPOSITE_DEFAULT, $x, $y);
+      $img->compositeImage($frame, Imagick::COMPOSITE_OVER, $x, $y);
       $lay->destroy();
       $frame->destroy();
     }
@@ -186,38 +186,47 @@ function gi_render_handler(WP_REST_Request $request) {
   }
 
   // --- Salida ---
-  $format = strtolower($payload['output']['format'] ?? 'jpg');
-  $quality = intval($payload['output']['quality'] ?? 90);
-  $filename = sanitize_file_name(($payload['output']['filename'] ?? ('collage-'.time())) . '.' . $format);
+$format = strtolower($payload['output']['format'] ?? 'jpg');
+$quality = intval($payload['output']['quality'] ?? 90);
+$filename = sanitize_file_name(($payload['output']['filename'] ?? ('collage-'.time())) . '.' . $format);
 
-  if ($format === 'jpg' || $format === 'jpeg') {
-    $img->setImageFormat('jpeg');
-    $img->setImageCompressionQuality($quality);
-  } elseif ($format === 'webp') {
-    $img->setImageFormat('webp');
-    $img->setImageCompressionQuality($quality);
-  } else {
-    $img->setImageFormat('png');
-  }
+// Aplana todas las capas (evita fondo transparente en JPG)
+$img = $img->mergeImageLayers(Imagick::LAYERMETHOD_FLATTEN);
 
-  $blob = $img->getImagesBlob();
-  $upload = wp_upload_bits($filename, null, $blob);
-  if (!empty($upload['error'])) {
-    return new WP_REST_Response(['error' => 'Fallo subiendo a Medios'], 500);
-  }
+if ($format === 'jpg' || $format === 'jpeg') {
+  $img->setImageFormat('jpeg');
+  $img->setImageCompressionQuality($quality);
+} elseif ($format === 'webp') {
+  $img->setImageFormat('webp');
+  $img->setImageCompressionQuality($quality);
+} else {
+  $img->setImageFormat('png');
+}
 
-  $filetype = wp_check_filetype($upload['file']);
-  $attachment = [
-    'post_mime_type' => $filetype['type'],
-    'post_title'     => preg_replace('/\.[^.]+$/', '', $filename),
-    'post_content'   => '',
-    'post_status'    => 'inherit'
-  ];
+// Generar el contenido binario (blob)
+$blob = $img->getImagesBlob();
 
-  $attach_id = wp_insert_attachment($attachment, $upload['file']);
-  require_once ABSPATH.'wp-admin/includes/image.php';
-  wp_generate_attachment_metadata($attach_id, $upload['file']);
-  $url = wp_get_attachment_url($attach_id);
+// Subir al directorio de medios
+$upload = wp_upload_bits($filename, null, $blob);
+if (!empty($upload['error'])) {
+  return new WP_REST_Response(['error' => 'Fallo subiendo a Medios'], 500);
+}
 
-  return new WP_REST_Response(['url' => $url, 'attachment_id' => $attach_id], 200);
+$filetype = wp_check_filetype($upload['file']);
+$attachment = [
+  'post_mime_type' => $filetype['type'],
+  'post_title'     => preg_replace('/\.[^.]+$/', '', $filename),
+  'post_content'   => '',
+  'post_status'    => 'inherit'
+];
+
+$attach_id = wp_insert_attachment($attachment, $upload['file']);
+require_once ABSPATH.'wp-admin/includes/image.php';
+wp_generate_attachment_metadata($attach_id, $upload['file']);
+$url = wp_get_attachment_url($attach_id);
+
+error_log("✅ Imagen final guardada en: $url");
+
+return new WP_REST_Response(['url' => $url, 'attachment_id' => $attach_id], 200);
+
 }
