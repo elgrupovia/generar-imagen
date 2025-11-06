@@ -2,16 +2,16 @@
 /**
  * Plugin Name: Generar Imagen
  * Description: Endpoint REST para generar imágenes a partir de JSON (usa Imagick y sube el resultado a Medios).
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Tu Nombre
  */
 
 if (!defined('ABSPATH')) exit;
 
-// Log para confirmar que se carga
+// Log de inicio
 error_log('✅ Plugin Generar Imagen cargado correctamente');
 
-// Registrar el endpoint principal
+// Registrar endpoint
 add_action('rest_api_init', function () {
   error_log('✅ Registrando ruta imagen/v1/generar');
 
@@ -22,9 +22,6 @@ add_action('rest_api_init', function () {
   ]);
 });
 
-/**
- * Handler principal del endpoint
- */
 function gi_render_handler(WP_REST_Request $request) {
   if (!class_exists('Imagick')) {
     return new WP_REST_Response(['error' => 'Imagick no disponible en el servidor'], 500);
@@ -38,7 +35,7 @@ function gi_render_handler(WP_REST_Request $request) {
   $payload = $request->get_json_params();
   if (!$payload) return new WP_REST_Response(['error' => 'JSON vacío'], 400);
 
-  // Canvas base
+  // --- Canvas base ---
   $W = min(intval($payload['canvas']['width'] ?? 1600), 4000);
   $H = min(intval($payload['canvas']['height'] ?? 900), 4000);
   $bg = $payload['canvas']['background'] ?? '#ffffff';
@@ -47,42 +44,39 @@ function gi_render_handler(WP_REST_Request $request) {
   $img->newImage($W, $H, new ImagickPixel($bg));
   $img->setImageFormat('png');
 
-  // Función para descargar imágenes externas
+  // --- Función para descargar imágenes externas ---
   $download_image = function(string $url) {
-  // Descarga robusta con cURL
-  $ch = curl_init($url);
-  curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_TIMEOUT => 20,
-    CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_USERAGENT => 'WordPress/GenerarImagen (+https://grupovia.net)',
-  ]);
-  $data = curl_exec($ch);
-  $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  error_log("📸 Descarga $url → status=$status bytes=" . strlen($data));
-  curl_close($ch);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_FOLLOWLOCATION => true,
+      CURLOPT_TIMEOUT => 20,
+      CURLOPT_SSL_VERIFYPEER => false,
+      CURLOPT_USERAGENT => 'WordPress/GenerarImagen (+https://grupovia.net)',
+    ]);
+    $data = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    error_log("📸 Descarga $url → status=$status bytes=" . strlen($data));
+    curl_close($ch);
 
-  if (!$data || $status != 200) return null;
+    if (!$data || $status != 200) return null;
 
-  // Guardar temporalmente
-  $tmp = wp_tempnam($url);
-  file_put_contents($tmp, $data);
+    $tmp = wp_tempnam($url);
+    file_put_contents($tmp, $data);
 
-  try {
-    $m = new Imagick($tmp);
-  } catch (\Throwable $e) {
+    try {
+      $m = new Imagick($tmp);
+    } catch (\Throwable $e) {
+      @unlink($tmp);
+      return null;
+    }
+
     @unlink($tmp);
-    return null;
-  }
+    $m->setImageAlphaChannel(Imagick::ALPHACHANNEL_ACTIVATE);
+    return $m;
+  };
 
-  @unlink($tmp);
-  $m->setImageAlphaChannel(Imagick::ALPHACHANNEL_ACTIVATE);
-  return $m;
-};
-
-
-  // Si se envían "layers"
+  // --- Procesar LAYERS ---
   if (!empty($payload['layers'])) {
     foreach ($payload['layers'] as $layer) {
       if (($layer['type'] ?? '') === 'image' && !empty($layer['url'])) {
@@ -111,12 +105,11 @@ function gi_render_handler(WP_REST_Request $request) {
     }
   }
 
-  // Si se envían "speakers"
+  // --- Procesar SPEAKERS ---
   else if (!empty($payload['speakers']) && is_array($payload['speakers'])) {
     $speakers = $payload['speakers'];
     $n = count($speakers);
 
-    // Layout automático (según cantidad)
     if ($n == 6) { $cols = 3; $rows = 2; }
     elseif ($n == 7) { $cols = 4; $rows = 2; }
     elseif ($n == 9) { $cols = 3; $rows = 3; }
@@ -144,10 +137,8 @@ function gi_render_handler(WP_REST_Request $request) {
       $lay = $download_image($url);
       if (!$lay) continue;
 
-      // Ajustar tamaño manteniendo proporción
       $lay->thumbnailImage($cellW, $cellH, true, true);
 
-      // Fondo cuadrado
       $frame = new Imagick();
       $frame->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
       $frame->setImageFormat('png');
@@ -156,7 +147,7 @@ function gi_render_handler(WP_REST_Request $request) {
       $offY = intval(($cellH - $lay->getImageHeight())/2);
       $frame->compositeImage($lay, Imagick::COMPOSITE_DEFAULT, $offX, $offY);
 
-      // --- Recorte circular ---
+      // Recorte circular
       $mask = new Imagick();
       $mask->newImage($cellW, $cellH, new ImagickPixel('transparent'));
       $drawMask = new ImagickDraw();
@@ -166,13 +157,12 @@ function gi_render_handler(WP_REST_Request $request) {
       $frame->compositeImage($mask, Imagick::COMPOSITE_DSTIN, 0, 0);
       $mask->destroy();
 
-      // Componer en el canvas
       $img->compositeImage($frame, Imagick::COMPOSITE_OVER, $x, $y);
       $lay->destroy();
       $frame->destroy();
     }
 
-    // Título del evento (opcional)
+    // Título
     if (!empty($payload['event_title'])) {
       $draw = new ImagickDraw();
       $draw->setFillColor('#111111');
@@ -185,48 +175,43 @@ function gi_render_handler(WP_REST_Request $request) {
     return new WP_REST_Response(['error' => 'Debes enviar "layers" o "speakers"'], 400);
   }
 
-  // --- Salida ---
-$format = strtolower($payload['output']['format'] ?? 'jpg');
-$quality = intval($payload['output']['quality'] ?? 90);
-$filename = sanitize_file_name(($payload['output']['filename'] ?? ('collage-'.time())) . '.' . $format);
+  // --- Salida final ---
+  $format = strtolower($payload['output']['format'] ?? 'jpg');
+  $quality = intval($payload['output']['quality'] ?? 90);
+  $filename = sanitize_file_name(($payload['output']['filename'] ?? ('collage-'.time())) . '.' . $format);
 
-// Aplana todas las capas (evita fondo transparente en JPG)
-$img = $img->mergeImageLayers(Imagick::LAYERMETHOD_FLATTEN);
+  $img = $img->mergeImageLayers(Imagick::LAYERMETHOD_FLATTEN);
 
-if ($format === 'jpg' || $format === 'jpeg') {
-  $img->setImageFormat('jpeg');
-  $img->setImageCompressionQuality($quality);
-} elseif ($format === 'webp') {
-  $img->setImageFormat('webp');
-  $img->setImageCompressionQuality($quality);
-} else {
-  $img->setImageFormat('png');
-}
+  if ($format === 'jpg' || $format === 'jpeg') {
+    $img->setImageFormat('jpeg');
+    $img->setImageCompressionQuality($quality);
+  } elseif ($format === 'webp') {
+    $img->setImageFormat('webp');
+    $img->setImageCompressionQuality($quality);
+  } else {
+    $img->setImageFormat('png');
+  }
 
-// Generar el contenido binario (blob)
-$blob = $img->getImagesBlob();
+  $blob = $img->getImagesBlob();
+  $upload = wp_upload_bits($filename, null, $blob);
+  if (!empty($upload['error'])) {
+    return new WP_REST_Response(['error' => 'Fallo subiendo a Medios'], 500);
+  }
 
-// Subir al directorio de medios
-$upload = wp_upload_bits($filename, null, $blob);
-if (!empty($upload['error'])) {
-  return new WP_REST_Response(['error' => 'Fallo subiendo a Medios'], 500);
-}
+  $filetype = wp_check_filetype($upload['file']);
+  $attachment = [
+    'post_mime_type' => $filetype['type'],
+    'post_title'     => preg_replace('/\.[^.]+$/', '', $filename),
+    'post_content'   => '',
+    'post_status'    => 'inherit'
+  ];
 
-$filetype = wp_check_filetype($upload['file']);
-$attachment = [
-  'post_mime_type' => $filetype['type'],
-  'post_title'     => preg_replace('/\.[^.]+$/', '', $filename),
-  'post_content'   => '',
-  'post_status'    => 'inherit'
-];
+  $attach_id = wp_insert_attachment($attachment, $upload['file']);
+  require_once ABSPATH.'wp-admin/includes/image.php';
+  wp_generate_attachment_metadata($attach_id, $upload['file']);
+  $url = wp_get_attachment_url($attach_id);
 
-$attach_id = wp_insert_attachment($attachment, $upload['file']);
-require_once ABSPATH.'wp-admin/includes/image.php';
-wp_generate_attachment_metadata($attach_id, $upload['file']);
-$url = wp_get_attachment_url($attach_id);
+  error_log("✅ Imagen final guardada en: $url");
 
-error_log("✅ Imagen final guardada en: $url");
-
-return new WP_REST_Response(['url' => $url, 'attachment_id' => $attach_id], 200);
-
+  return new WP_REST_Response(['url' => $url, 'attachment_id' => $attach_id], 200);
 }
