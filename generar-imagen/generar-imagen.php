@@ -145,45 +145,28 @@ function gi_render_handler(WP_REST_Request $request) {
         continue;
       }
 
-      // --- RECORTE CIRCULAR ROBUSTO ---
-      // Crear imagen circular redimensionada
-      $circle_size = min($cellW, $cellH);
-      $circle = new Imagick();
-      $circle->newImage($circle_size, $circle_size, new ImagickPixel('transparent'));
-      $circle->setImageFormat('png');
+      // Redimensionar foto a celda completa (sin recorte)
+      $lay->resizeImage($cellW, $cellH, Imagick::FILTER_LANCZOS, 1, false);
 
-      // Redimensionar foto al tamaño círculo
-      $lay->thumbnailImage($circle_size, $circle_size, true, true);
-      
-      // Centrar la foto en el círculo
-      $offX = intval(($circle_size - $lay->getImageWidth()) / 2);
-      $offY = intval(($circle_size - $lay->getImageHeight()) / 2);
-      $circle->compositeImage($lay, Imagick::COMPOSITE_OVER, $offX, $offY);
+      // Crear fondo blanco de la celda
+      $frame = new Imagick();
+      $frame->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
+      $frame->setImageFormat('png');
+      $frame->compositeImage($lay, Imagick::COMPOSITE_OVER, 0, 0);
 
-      // Crear máscara circular
+      // Crear máscara circular GRANDE (radius = mitad de celda)
       $mask = new Imagick();
-      $mask->newImage($circle_size, $circle_size, new ImagickPixel('black'));
+      $mask->newImage($cellW, $cellH, new ImagickPixel('black'));
       $mask->setImageFormat('png');
 
       $draw = new ImagickDraw();
       $draw->setFillColor('white');
-      $draw->circle($circle_size/2, $circle_size/2, $circle_size/2, 0);
+      $radius = $cellW / 2;
+      $draw->circle($cellW/2, $cellH/2, $cellW/2 + $radius, $cellH/2);
       $mask->drawImage($draw);
 
-      // Usar máscara como canal alpha
-      $circle->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0);
-
-      // Crear fondo blanco con círculo
-      $frame = new Imagick();
-      $frame->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
-      $frame->setImageFormat('png');
-
-      $offX = intval(($cellW - $circle_size) / 2);
-      $offY = intval(($cellH - $circle_size) / 2);
-      $frame->compositeImage($circle, Imagick::COMPOSITE_OVER, $offX, $offY);
-
-      $mask->destroy();
-      $circle->destroy();
+      // Aplicar máscara como alpha
+      $frame->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0);
 
       // Componer en canvas principal
       $img->compositeImage($frame, Imagick::COMPOSITE_OVER, $x, $y);
@@ -192,6 +175,7 @@ function gi_render_handler(WP_REST_Request $request) {
 
       $lay->destroy();
       $frame->destroy();
+      $mask->destroy();
       $mask->destroy();
     }
 
@@ -211,8 +195,14 @@ function gi_render_handler(WP_REST_Request $request) {
   $quality = intval($payload['output']['quality'] ?? 90);
   $filename = sanitize_file_name(($payload['output']['filename'] ?? ('collage-'.time())) . '.' . $format);
 
+  // Si es JPG, crear fondo opaco primero
   if ($format === 'jpg' || $format === 'jpeg') {
-    $img->setImageFormat('jpeg');
+    $bg_layer = new Imagick();
+    $bg_layer->newImage($W, $H, new ImagickPixel('#ffffff'));
+    $bg_layer->setImageFormat('jpeg');
+    $bg_layer->compositeImage($img, Imagick::COMPOSITE_OVER, 0, 0);
+    $img->destroy();
+    $img = $bg_layer;
     $img->setImageCompressionQuality($quality);
   } elseif ($format === 'webp') {
     $img->setImageFormat('webp');
@@ -221,6 +211,8 @@ function gi_render_handler(WP_REST_Request $request) {
     $img->setImageFormat('png');
   }
 
+  // Asegurar formato correcto
+  $img->setImageFormat($format === 'jpeg' ? 'jpeg' : ($format === 'webp' ? 'webp' : 'png'));
   $blob = $img->getImagesBlob();
   $img->destroy();
 
