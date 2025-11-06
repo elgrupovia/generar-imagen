@@ -139,51 +139,47 @@ function gi_render_handler(WP_REST_Request $request) {
         continue;
       }
 
-      $lay = $download_image($url);
-      if (!$lay) {
-        error_log("⚠️ Error descargando foto speaker $i: $url");
+      $url_photo = $speakers[$i]['photo'] ?? null;
+      if (!$url_photo) {
+        error_log("⚠️ Speaker $i sin foto");
         continue;
       }
 
-      // Redimensionar foto manteniendo aspecto
-      $lay->thumbnailImage($cellW, $cellH, true);
+      $photo = $download_image($url_photo);
+      if (!$photo) {
+        error_log("⚠️ Error descargando foto speaker $i: $url_photo");
+        continue;
+      }
 
-      // Crear frame con fondo blanco
-      $frame = new Imagick();
-      $frame->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
-      $frame->setImageFormat('png');
+      // Redimensionar foto al tamaño de celda
+      $photo->thumbnailImage($cellW, $cellH, true);
 
-      // Centrar foto en el frame
-      $offX = intval(($cellW - $lay->getImageWidth()) / 2);
-      $offY = intval(($cellH - $lay->getImageHeight()) / 2);
-      $frame->compositeImage($lay, Imagick::COMPOSITE_OVER, $offX, $offY);
+      // Crear fondo blanco
+      $bg = new Imagick();
+      $bg->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
+      $bg->setImageFormat('png');
 
-      // Crear máscara: fondo transparente + círculo blanco
-      $mask = new Imagick();
-      $mask->newImage($cellW, $cellH, new ImagickPixel('transparent'));
-      $mask->setImageFormat('png');
+      // Centrar foto sobre fondo
+      $offX = intval(($cellW - $photo->getImageWidth()) / 2);
+      $offY = intval(($cellH - $photo->getImageHeight()) / 2);
+      $bg->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
 
+      // Crear círculo blanco para borde
+      $radius = intval(min($cellW, $cellH) / 2) - 5;
       $draw = new ImagickDraw();
-      $draw->setFillColor('white');
-      $draw->setStrokeColor('white');
-      $cx = $cellW / 2;
-      $cy = $cellH / 2;
-      $r = min($cellW, $cellH) / 2;
-      $draw->circle($cx, $cy, $cx + $r, $cy);
-      $mask->drawImage($draw);
+      $draw->setFillColor('none');
+      $draw->setStrokeColor('#dddddd');
+      $draw->setStrokeWidth(2);
+      $draw->circle($cellW/2, $cellH/2, $cellW/2 + $radius, $cellH/2);
+      $bg->drawImage($draw);
 
-      // Copiar alfa de máscara a frame
-      $frame->setImageAlphaChannel(Imagick::ALPHACHANNEL_OFF);
-      $frame->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0);
-
-      // Componer en canvas principal
-      $img->compositeImage($frame, Imagick::COMPOSITE_OVER, $x, $y);
+      // Componer en canvas
+      $img->compositeImage($bg, Imagick::COMPOSITE_OVER, $x, $y);
 
       error_log("✅ Speaker $i colocado en ({$x}, {$y})");
 
-      $lay->destroy();
-      $frame->destroy();
-      $mask->destroy();
+      $photo->destroy();
+      $bg->destroy();
       $mask->destroy();
     }
 
