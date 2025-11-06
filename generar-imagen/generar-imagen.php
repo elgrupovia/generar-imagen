@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Generar Imagen
  * Description: Endpoint REST para generar imágenes a partir de JSON (usa Imagick y sube el resultado a Medios).
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: Tu Nombre
  */
 
@@ -104,7 +104,7 @@ function gi_render_handler(WP_REST_Request $request) {
     }
   }
 
-  // SPEAKERS (GRID CIRCULAR)
+  // SPEAKERS (GRID CON FOTOS)
   else if (!empty($payload['speakers']) && is_array($payload['speakers'])) {
     $speakers = $payload['speakers'];
     $n = count($speakers);
@@ -139,15 +139,9 @@ function gi_render_handler(WP_REST_Request $request) {
         continue;
       }
 
-      $url_photo = $speakers[$i]['photo'] ?? null;
-      if (!$url_photo) {
-        error_log("⚠️ Speaker $i sin foto");
-        continue;
-      }
-
-      $photo = $download_image($url_photo);
+      $photo = $download_image($url);
       if (!$photo) {
-        error_log("⚠️ Error descargando foto speaker $i: $url_photo");
+        error_log("⚠️ Error descargando foto speaker $i: $url");
         continue;
       }
 
@@ -155,32 +149,31 @@ function gi_render_handler(WP_REST_Request $request) {
       $photo->thumbnailImage($cellW, $cellH, true);
 
       // Crear fondo blanco
-      $bg = new Imagick();
-      $bg->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
-      $bg->setImageFormat('png');
+      $bg_cell = new Imagick();
+      $bg_cell->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
+      $bg_cell->setImageFormat('png');
 
       // Centrar foto sobre fondo
       $offX = intval(($cellW - $photo->getImageWidth()) / 2);
       $offY = intval(($cellH - $photo->getImageHeight()) / 2);
-      $bg->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
+      $bg_cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
 
-      // Crear círculo blanco para borde
+      // Dibujar círculo como borde visual
       $radius = intval(min($cellW, $cellH) / 2) - 5;
       $draw = new ImagickDraw();
       $draw->setFillColor('none');
-      $draw->setStrokeColor('#dddddd');
+      $draw->setStrokeColor('#cccccc');
       $draw->setStrokeWidth(2);
       $draw->circle($cellW/2, $cellH/2, $cellW/2 + $radius, $cellH/2);
-      $bg->drawImage($draw);
+      $bg_cell->drawImage($draw);
 
       // Componer en canvas
-      $img->compositeImage($bg, Imagick::COMPOSITE_OVER, $x, $y);
+      $img->compositeImage($bg_cell, Imagick::COMPOSITE_OVER, $x, $y);
 
       error_log("✅ Speaker $i colocado en ({$x}, {$y})");
 
       $photo->destroy();
-      $bg->destroy();
-      $mask->destroy();
+      $bg_cell->destroy();
     }
 
     // Título
@@ -215,8 +208,6 @@ function gi_render_handler(WP_REST_Request $request) {
     $img->setImageFormat('png');
   }
 
-  // Asegurar formato correcto
-  $img->setImageFormat($format === 'jpeg' ? 'jpeg' : ($format === 'webp' ? 'webp' : 'png'));
   $blob = $img->getImagesBlob();
   $img->destroy();
 
