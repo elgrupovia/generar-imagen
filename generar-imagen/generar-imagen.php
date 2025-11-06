@@ -49,14 +49,37 @@ function gi_render_handler(WP_REST_Request $request) {
 
   // Función para descargar imágenes externas
   $download_image = function(string $url) {
-    $tmp = download_url($url, 15);
-    if (is_wp_error($tmp)) return null;
-    try { $m = new Imagick($tmp); }
-    catch (\Throwable $e) { @unlink($tmp); return null; }
+  // Descarga robusta con cURL
+  $ch = curl_init($url);
+  curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_TIMEOUT => 20,
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_USERAGENT => 'WordPress/GenerarImagen (+https://grupovia.net)',
+  ]);
+  $data = curl_exec($ch);
+  $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  curl_close($ch);
+
+  if (!$data || $status != 200) return null;
+
+  // Guardar temporalmente
+  $tmp = wp_tempnam($url);
+  file_put_contents($tmp, $data);
+
+  try {
+    $m = new Imagick($tmp);
+  } catch (\Throwable $e) {
     @unlink($tmp);
-    $m->setImageAlphaChannel(Imagick::ALPHACHANNEL_ACTIVATE);
-    return $m;
-  };
+    return null;
+  }
+
+  @unlink($tmp);
+  $m->setImageAlphaChannel(Imagick::ALPHACHANNEL_ACTIVATE);
+  return $m;
+};
+
 
   // Si se envían "layers"
   if (!empty($payload['layers'])) {
