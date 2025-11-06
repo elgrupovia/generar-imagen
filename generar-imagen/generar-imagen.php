@@ -145,18 +145,30 @@ function gi_render_handler(WP_REST_Request $request) {
         continue;
       }
 
-      // Redimensionar foto al tamaño de celda
-      $photo->thumbnailImage($cellW, $cellH, true);
+      error_log("📸 Foto original: " . $photo->getImageWidth() . "x" . $photo->getImageHeight());
 
       // Crear fondo blanco
       $bg_cell = new Imagick();
       $bg_cell->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
       $bg_cell->setImageFormat('png');
 
-      // Centrar foto sobre fondo
+      // Escalar foto simple
+      $photo->scaleImage($cellW, $cellH, true);
+      
+      error_log("📸 Foto escalada a: " . $photo->getImageWidth() . "x" . $photo->getImageHeight());
+
+      // Centrar foto
       $offX = intval(($cellW - $photo->getImageWidth()) / 2);
       $offY = intval(($cellH - $photo->getImageHeight()) / 2);
-      $bg_cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
+      
+      error_log("📍 Offset: ({$offX}, {$offY})");
+
+      // Asegurar que ambas tienen el mismo formato
+      $bg_cell->setImageFormat('png');
+      $photo->setImageFormat('png');
+      
+      $result = $bg_cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
+      error_log("✍️ Composite resultado: " . ($result ? 'OK' : 'FAIL'));
 
       // Dibujar círculo como borde visual
       $radius = intval(min($cellW, $cellH) / 2) - 5;
