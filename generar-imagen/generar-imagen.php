@@ -145,30 +145,45 @@ function gi_render_handler(WP_REST_Request $request) {
         continue;
       }
 
-      // Resize manteniendo relación
-      $lay->thumbnailImage($cellW, $cellH, true, true);
+      // --- RECORTE CIRCULAR ROBUSTO ---
+      // Crear imagen circular redimensionada
+      $circle_size = min($cellW, $cellH);
+      $circle = new Imagick();
+      $circle->newImage($circle_size, $circle_size, new ImagickPixel('transparent'));
+      $circle->setImageFormat('png');
 
-      // Crear fondo blanco
-      $frame = new Imagick();
-      $frame->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
-      $frame->setImageFormat('png');
+      // Redimensionar foto al tamaño círculo
+      $lay->thumbnailImage($circle_size, $circle_size, true, true);
+      
+      // Centrar la foto en el círculo
+      $offX = intval(($circle_size - $lay->getImageWidth()) / 2);
+      $offY = intval(($circle_size - $lay->getImageHeight()) / 2);
+      $circle->compositeImage($lay, Imagick::COMPOSITE_OVER, $offX, $offY);
 
-      $offX = intval(($cellW - $lay->getImageWidth()) / 2);
-      $offY = intval(($cellH - $lay->getImageHeight()) / 2);
-      $frame->compositeImage($lay, Imagick::COMPOSITE_OVER, $offX, $offY);
-
-      // --- MÁSCARA CIRCULAR (MEJORADA) ---
+      // Crear máscara circular
       $mask = new Imagick();
-      $mask->newImage($cellW, $cellH, new ImagickPixel('transparent'));
+      $mask->newImage($circle_size, $circle_size, new ImagickPixel('black'));
       $mask->setImageFormat('png');
 
       $draw = new ImagickDraw();
       $draw->setFillColor('white');
-      $draw->circle($cellW/2, $cellH/2, $cellW/2, $cellH/2 - 0);
+      $draw->circle($circle_size/2, $circle_size/2, $circle_size/2, 0);
       $mask->drawImage($draw);
 
-      // Aplicar máscara con COMPOSITE_DSTIN
-      $frame->compositeImage($mask, Imagick::COMPOSITE_DSTIN, 0, 0);
+      // Usar máscara como canal alpha
+      $circle->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0);
+
+      // Crear fondo blanco con círculo
+      $frame = new Imagick();
+      $frame->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
+      $frame->setImageFormat('png');
+
+      $offX = intval(($cellW - $circle_size) / 2);
+      $offY = intval(($cellH - $circle_size) / 2);
+      $frame->compositeImage($circle, Imagick::COMPOSITE_OVER, $offX, $offY);
+
+      $mask->destroy();
+      $circle->destroy();
 
       // Componer en canvas principal
       $img->compositeImage($frame, Imagick::COMPOSITE_OVER, $x, $y);
