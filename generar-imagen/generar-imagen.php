@@ -125,23 +125,24 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             }
         }
     }
-
-    // ✨ Logo superior derecho (pequeño y visible)
+    // ✨ Logo superior derecho (se agrega DESPUÉS del banner)
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
         if ($logoUrl) {
             $headerLogo = $download_image($logoUrl);
-            $headerLogo = safe_thumbnail($headerLogo, intval($W * 0.10), 0, $logoUrl, 'logo superior'); // 10% ancho
             if ($headerLogo) {
-                $x = $W - $headerLogo->getImageWidth() - 70;
-                $y = 80; // un poco más abajo del borde
+                $targetW = intval($W * 0.15); // 🔹 Más grande (15% del ancho)
+                $headerLogo = safe_thumbnail($headerLogo, $targetW, 0, $logoUrl, 'logo superior derecho');
+                $x = $W - $headerLogo->getImageWidth() - 80;
+                $y = 60; // 🔹 mismo nivel que el banner
                 $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
                 error_log("✨ Logo superior derecho agregado ($logoUrl)");
             } else {
-                error_log("⚠️ Logo no pudo cargarse ($logoUrl)");
+                error_log("⚠️ No se pudo cargar el logo superior derecho ($logoUrl)");
             }
         }
     }
+
 
     // 📝 Título centrado debajo del banner
     if (!empty($payload['event_title'])) {
