@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Generar Collage Speakers con Logs
  * Description: Genera un collage tipo cartel de evento con speakers, logos, sponsors, banner y logotipo superior.
- * Version: 1.5.0
+ * Version: 1.6.0
  * Author: GrupoVia
  */
 
@@ -18,6 +18,9 @@ add_action('rest_api_init', function () {
     ]);
 });
 
+/**
+ * Crea miniaturas seguras evitando errores de geometría inválida
+ */
 function safe_thumbnail($imagick, $w, $h, $url, $context) {
     try {
         if ($imagick && $imagick->getImageWidth() > 0 && $imagick->getImageHeight() > 0) {
@@ -39,6 +42,9 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
     }
 }
 
+/**
+ * Función principal del collage
+ */
 function gi_generate_collage_logs(WP_REST_Request $request) {
     error_log('✅ Generando collage con banner centrado y logo superior derecho');
 
@@ -77,7 +83,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
     $img->setImageFormat('png');
 
-    // 🔽 Descargar imágenes
+    // 🔽 Función para descargar imágenes con compatibilidad robusta
     $download_image = function(string $url) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -109,40 +115,65 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $padding = intval($payload['autoLayout']['padding'] ?? 80);
     $gutter  = intval($payload['autoLayout']['gutter'] ?? 30);
 
-    // 🏁 Banner centrado (ocupa 55% del ancho, con margen superior)
+    // 🏁 Banner centrado (55% del ancho, margen superior)
     if (!empty($payload['banner'])) {
         $bannerUrl = $payload['banner']['photo'] ?? null;
         if ($bannerUrl) {
             $banner = $download_image($bannerUrl);
-            $bannerW = intval($W * 0.55); // 55% del ancho total
-            $bannerH = intval($H * 0.20); // 20% de alto
+            $bannerW = intval($W * 0.55);
+            $bannerH = intval($H * 0.20);
             $banner = safe_thumbnail($banner, $bannerW, $bannerH, $bannerUrl, 'banner centrado');
             if ($banner) {
                 $x = intval(($W - $banner->getImageWidth()) / 2);
-                $y = 60; // margen superior
+                $y = 60;
                 $img->compositeImage($banner, Imagick::COMPOSITE_OVER, $x, $y);
                 error_log("🏁 Banner centrado agregado ($bannerUrl)");
             }
         }
     }
-    // ✨ Logo superior derecho (se agrega DESPUÉS del banner)
+
+    // ✨ Logo superior derecho (robusto y compatible con picsum)
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
         if ($logoUrl) {
-            $headerLogo = $download_image($logoUrl);
-            if ($headerLogo) {
-                $targetW = intval($W * 0.15); // 🔹 Más grande (15% del ancho)
-                $headerLogo = safe_thumbnail($headerLogo, $targetW, 0, $logoUrl, 'logo superior derecho');
-                $x = $W - $headerLogo->getImageWidth() - 80;
-                $y = 60; // 🔹 mismo nivel que el banner
-                $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
-                error_log("✨ Logo superior derecho agregado ($logoUrl)");
-            } else {
-                error_log("⚠️ No se pudo cargar el logo superior derecho ($logoUrl)");
+            try {
+                $tmpFile = wp_tempnam();
+                $ch = curl_init($logoUrl);
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_TIMEOUT => 20,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                ]);
+                $data = curl_exec($ch);
+                $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if ($data && $status == 200) {
+                    file_put_contents($tmpFile, $data);
+                    $headerLogo = new Imagick($tmpFile);
+                    @unlink($tmpFile);
+
+                    if ($headerLogo && $headerLogo->getImageWidth() > 0 && $headerLogo->getImageHeight() > 0) {
+                        $targetW = intval($W * 0.18);
+                        $headerLogo = safe_thumbnail($headerLogo, $targetW, 0, $logoUrl, 'logo superior derecho');
+                        if ($headerLogo) {
+                            $x = $W - $headerLogo->getImageWidth() - 80;
+                            $y = 60;
+                            $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
+                            error_log("✨ Logo superior derecho agregado correctamente ($logoUrl)");
+                        }
+                    } else {
+                        error_log("⚠️ Logo descargado pero vacío ($logoUrl)");
+                    }
+                } else {
+                    error_log("⚠️ No se pudo descargar logo superior derecho: $logoUrl (status $status)");
+                }
+            } catch (Exception $e) {
+                error_log("❌ Error al procesar logo superior derecho: ".$e->getMessage());
             }
         }
     }
-
 
     // 📝 Título centrado debajo del banner
     if (!empty($payload['event_title'])) {
@@ -218,7 +249,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
 
-    // 📤 Exportar
+    // 📤 Exportar imagen final
     $format = strtolower($payload['output']['format'] ?? 'jpg');
     $filename = sanitize_file_name(($payload['output']['filename'] ?? 'collage_evento').'.'.$format);
 
