@@ -8,7 +8,9 @@
 
 if (!defined('ABSPATH')) exit;
 
+error_log('🚀 Iniciando plugin Generar Collage Speakers con Logs');
 add_action('rest_api_init', function () {
+  error_log('📡 Hook rest_api_init ejecutado — registrando /imagen/v1/generar');
     register_rest_route('imagen/v1', '/generar', [
         'methods' => 'POST',
         'callback' => 'gi_generate_collage_logs',
