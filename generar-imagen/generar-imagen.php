@@ -33,17 +33,26 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
 
     $payload = $request->get_json_params();
-    if (!$payload || empty($payload['speakers'])) {
-        error_log('❌ No se enviaron speakers');
-        return new WP_REST_Response(['error'=>'No se proporcionaron speakers'], 400);
+    if (!$payload) {
+        error_log('❌ No se recibió payload');
+        return new WP_REST_Response(['error'=>'No se recibió payload'], 400);
     }
 
-    $W = intval($payload['canvas']['width'] ?? 1600);
-    $H = intval($payload['canvas']['height'] ?? 900);
+    $W  = intval($payload['canvas']['width'] ?? 1600);
+    $H  = intval($payload['canvas']['height'] ?? 2200);
     $bg = $payload['canvas']['background'] ?? '#ffffff';
 
+    // Crear lienzo base
     $img = new Imagick();
-    $img->newImage($W, $H, new ImagickPixel($bg));
+    if (filter_var($bg, FILTER_VALIDATE_URL)) {
+        error_log("🖼️ Fondo detectado como imagen: $bg");
+        $bg_image = new Imagick();
+        $bg_image->readImage($bg);
+        $bg_image->resizeImage($W, $H, Imagick::FILTER_LANCZOS, 1);
+        $img = $bg_image;
+    } else {
+        $img->newImage($W, $H, new ImagickPixel($bg));
+    }
     $img->setImageFormat('png');
 
     $download_image = function(string $url) {
@@ -58,104 +67,106 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $data = curl_exec($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-
-        if (!$data || $status != 200) {
-            error_log("❌ Error descargando $url (HTTP $status)");
-            return null;
-        }
+        if (!$data || $status != 200) return null;
 
         $tmp = wp_tempnam();
         file_put_contents($tmp, $data);
-
-        try {
-            $m = new Imagick($tmp);
-            error_log("✅ Imagen cargada en Imagick: $url");
-        } catch (\Throwable $e) {
-            error_log("❌ Error cargando imagen en Imagick: ".$e->getMessage());
-            @unlink($tmp);
-            return null;
-        }
-
+        $m = new Imagick($tmp);
         @unlink($tmp);
         return $m;
     };
 
-    // Grid 3x2
-    $speakers = $payload['speakers'];
-    $cols = 3;
-    $rows = 2;
-    $n = count($speakers);
+    $padding = intval($payload['autoLayout']['padding'] ?? 80);
+    $gutter  = intval($payload['autoLayout']['gutter'] ?? 30);
 
-    $padding = intval($payload['autoLayout']['padding'] ?? 40);
-    $gutter  = intval($payload['autoLayout']['gutter'] ?? 20);
+    // ====== SECCIÓN 1: Título ======
+    if (!empty($payload['event_title'])) {
+        $draw = new ImagickDraw();
+        $draw->setFillColor('#000000');
+        $draw->setFontSize(80);
+        $draw->setFontWeight(800);
+        $draw->setTextAlignment(Imagick::ALIGN_CENTER);
+        $img->annotateImage($draw, $W/2, 150, 0, $payload['event_title']);
+        error_log("📝 Título agregado: ".$payload['event_title']);
+    }
+
+    // ====== SECCIÓN 2: SPEAKERS ======
+    $speakers = $payload['speakers'] ?? [];
+    $n = count($speakers);
+    $cols = ($n > 6) ? 4 : 3;
+    $rows = ceil($n / $cols);
+
+    $areaH = intval($H * 0.55);
+    $startY = intval($H * 0.2);
 
     $gridW = $W - 2*$padding;
-    $gridH = $H - 2*$padding;
+    $gridH = $areaH - 2*$padding;
     $cellW = intval(($gridW - ($cols-1)*$gutter)/$cols);
     $cellH = intval(($gridH - ($rows-1)*$gutter)/$rows);
-
-    error_log("📐 Grid: {$cols}x{$rows} | Celda: {$cellW}x{$cellH}");
 
     for ($i=0; $i<$n; $i++) {
         $c = $i % $cols;
         $r = intdiv($i, $cols);
         $x = $padding + $c*($cellW + $gutter);
-        $y = $padding + $r*($cellH + $gutter);
+        $y = $startY + $r*($cellH + $gutter);
 
-        $url = $speakers[$i]['photo'] ?? null;
-        if (!$url) {
-            error_log("⚠️ Speaker $i sin foto");
-            continue;
-        }
-
-        $photo = $download_image($url);
-        if (!$photo) {
-            error_log("⚠️ No se pudo descargar la foto del speaker $i");
-            continue;
-        }
-
+        $photo = $download_image($speakers[$i]['photo']);
+        if (!$photo) continue;
         $photo->thumbnailImage($cellW, $cellH, true);
 
-        // Fondo blanco
-        $bg_cell = new Imagick();
-        $bg_cell->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
-        $bg_cell->setImageFormat('png');
-
-        // Centrar foto
-        $offX = intval(($cellW - $photo->getImageWidth()) / 2);
-        $offY = intval(($cellH - $photo->getImageHeight()) / 2);
-        $bg_cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
-
-        $img->compositeImage($bg_cell, Imagick::COMPOSITE_OVER, $x, $y);
-        error_log("✅ Speaker $i colocado en ({$x}, {$y})");
-
-        $photo->destroy();
-        $bg_cell->destroy();
+        // Fondo blanco para la celda
+        $cell = new Imagick();
+        $cell->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
+        $offX = intval(($cellW - $photo->getImageWidth())/2);
+        $offY = intval(($cellH - $photo->getImageHeight())/2);
+        $cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
+        $img->compositeImage($cell, Imagick::COMPOSITE_OVER, $x, $y);
     }
 
-    if (!empty($payload['event_title'])) {
-        $draw = new ImagickDraw();
-        $draw->setFillColor('#111111');
-        $draw->setFontSize(36);
-        $img->annotateImage($draw, $padding, $H - 30, 0, $payload['event_title']);
-        error_log("📝 Título agregado: ".$payload['event_title']);
+    // ====== SECCIÓN 3: LOGOS ======
+    $logos = $payload['logos'] ?? [];
+    if (!empty($logos)) {
+        $logoAreaH = intval($H * 0.15);
+        $yStart = $H - $logoAreaH - 200;
+        $maxW = 250;
+        $x = $padding;
+        foreach ($logos as $logo) {
+            $m = $download_image($logo['photo']);
+            if (!$m) continue;
+            $m->thumbnailImage($maxW, 0);
+            $img->compositeImage($m, Imagick::COMPOSITE_OVER, $x, $yStart);
+            $x += $maxW + 40;
+        }
+        error_log("🏷️ Logos agregados");
     }
 
-    // Guardar y subir
+    // ====== SECCIÓN 4: SPONSORS ======
+    $sponsors = $payload['sponsors'] ?? [];
+    if (!empty($sponsors)) {
+        $yStart = $H - 180;
+        $x = $padding;
+        $maxW = 200;
+        foreach ($sponsors as $sp) {
+            $m = $download_image($sp['photo']);
+            if (!$m) continue;
+            $m->thumbnailImage($maxW, 0);
+            $img->compositeImage($m, Imagick::COMPOSITE_OVER, $x, $yStart);
+            $x += $maxW + 30;
+        }
+        error_log("🤝 Sponsors agregados");
+    }
+
+    // ====== EXPORTAR ======
     $format = strtolower($payload['output']['format'] ?? 'jpg');
     $quality = intval($payload['output']['quality'] ?? 90);
     $filename = sanitize_file_name(($payload['output']['filename'] ?? 'collage_'.time()).'.'.$format);
 
-    if ($format === 'jpg' || $format === 'jpeg') {
+    if ($format === 'jpg') {
         $bg_layer = new Imagick();
         $bg_layer->newImage($W, $H, new ImagickPixel('#ffffff'));
-        $bg_layer->setImageFormat('jpeg');
         $bg_layer->compositeImage($img, Imagick::COMPOSITE_OVER, 0, 0);
-        $img->destroy();
         $img = $bg_layer;
-        $img->setImageCompressionQuality($quality);
-    } elseif ($format === 'webp') {
-        $img->setImageFormat('webp');
+        $img->setImageFormat('jpeg');
         $img->setImageCompressionQuality($quality);
     } else {
         $img->setImageFormat('png');
