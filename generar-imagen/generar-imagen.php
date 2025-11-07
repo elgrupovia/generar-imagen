@@ -123,40 +123,39 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $x += $photoW + $gutter;
         }
     }
-
-    // 💼 Logos pequeños — una fila centrada
+    // 💼 Logos pequeños — fila centrada (ajuste dinámico)
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
         $logoY = $H - 500;
-        $maxW = 220;
+        $maxW = min(220, intval(($W - (count($logos) - 1) * 30) / count($logos)));
         $totalW = count($logos) * $maxW + (count($logos) - 1) * 30;
         $x = ($W - $totalW) / 2;
         foreach ($logos as $logo) {
             $m = $download_image($logo['photo']);
             if (!$m) continue;
-            $m->thumbnailImage($maxW, 0);
-            $img->compositeImage($m, Imagick::COMPOSITE_OVER, $x, $logoY);
+            $m->thumbnailImage($maxW, 100, true);
+            $img->compositeImage($m, Imagick::COMPOSITE_OVER, intval($x), intval($logoY));
             $x += $maxW + 30;
         }
-        error_log("🏷️ Logos colocados centrados");
+        error_log("🏷️ Logos colocados centrados (anchos ajustados a $maxW)");
     }
 
-    // 🤝 Sponsors — segunda fila centrada debajo de logos
-    $sponsors = $payload['sponsors'] ?? [];
-    if (!empty($sponsors)) {
-        $sponsorY = $H - 250;
-        $maxW = 300;
-        $totalW = count($sponsors) * $maxW + (count($sponsors) - 1) * 50;
-        $x = ($W - $totalW) / 2;
-        foreach ($sponsors as $sp) {
-            $m = $download_image($sp['photo']);
-            if (!$m) continue;
-            $m->thumbnailImage($maxW, 0);
-            $img->compositeImage($m, Imagick::COMPOSITE_OVER, $x, $sponsorY);
-            $x += $maxW + 50;
-        }
-        error_log("🤝 Sponsors colocados centrados");
-    }
+      // 🤝 Sponsors — fila centrada debajo de logos
+      $sponsors = $payload['sponsors'] ?? [];
+      if (!empty($sponsors)) {
+          $sponsorY = $H - 300; // un poco más arriba
+          $maxW = min(300, intval(($W - (count($sponsors) - 1) * 50) / count($sponsors)));
+          $totalW = count($sponsors) * $maxW + (count($sponsors) - 1) * 50;
+          $x = ($W - $totalW) / 2;
+          foreach ($sponsors as $sp) {
+              $m = $download_image($sp['photo']);
+              if (!$m) continue;
+              $m->thumbnailImage($maxW, 120, true);
+              $img->compositeImage($m, Imagick::COMPOSITE_OVER, intval($x), intval($sponsorY));
+              $x += $maxW + 50;
+          }
+          error_log("🤝 Sponsors colocados centrados (anchos ajustados a $maxW)");
+      }
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
