@@ -1,248 +1,147 @@
 <?php
 /**
- * Plugin Name: Generar Imagen
- * Description: Endpoint REST para generar imágenes a partir de JSON (usa Imagick y sube el resultado a Medios).
- * Version: 1.2.1
- * Author: Tu Nombre
+ * Plugin Name: Generar Collage Speakers
+ * Description: Endpoint REST para generar un collage de 6 speakers (usa Imagick y sube a Medios).
+ * Version: 1.0.0
+ * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('✅ Plugin Generar Imagen cargado correctamente');
-
 add_action('rest_api_init', function () {
-  register_rest_route('imagen/v1', '/generar', [
-    'methods'  => 'POST',
-    'callback' => 'gi_render_handler',
-    'permission_callback' => '__return_true',
-  ]);
+    register_rest_route('imagen/v1', '/generar', [
+        'methods' => 'POST',
+        'callback' => 'gi_generate_collage',
+        'permission_callback' => '__return_true',
+    ]);
 });
 
-function gi_render_handler(WP_REST_Request $request) {
-  if (!class_exists('Imagick')) {
-    return new WP_REST_Response(['error' => 'Imagick no disponible'], 500);
-  }
+function gi_generate_collage(WP_REST_Request $request) {
+    if (!class_exists('Imagick')) return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
 
-  $token = $request->get_param('token');
-  if ($token !== 'SECRETO') {
-    return new WP_REST_Response(['error' => 'Unauthorized'], 401);
-  }
+    $token = $request->get_param('token');
+    if ($token !== 'SECRETO') return new WP_REST_Response(['error'=>'Unauthorized'], 401);
 
-  $payload = $request->get_json_params();
-  if (!$payload) return new WP_REST_Response(['error' => 'JSON vacío'], 400);
+    $payload = $request->get_json_params();
+    if (!$payload || empty($payload['speakers'])) return new WP_REST_Response(['error'=>'No se proporcionaron speakers'], 400);
 
-  // Canvas
-  $W = min(intval($payload['canvas']['width'] ?? 1600), 4000);
-  $H = min(intval($payload['canvas']['height'] ?? 900), 4000);
-  $bg = $payload['canvas']['background'] ?? '#ffffff';
+    // Canvas
+    $W = intval($payload['canvas']['width'] ?? 1600);
+    $H = intval($payload['canvas']['height'] ?? 900);
+    $bg = $payload['canvas']['background'] ?? '#ffffff';
 
-  $img = new Imagick();
-  $img->newImage($W, $H, new ImagickPixel($bg));
-  $img->setImageFormat('png');
+    $img = new Imagick();
+    $img->newImage($W, $H, new ImagickPixel($bg));
+    $img->setImageFormat('png');
 
-  // Función para descargar imágenes
-  $download_image = function(string $url) {
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-      CURLOPT_RETURNTRANSFER => true,
-      CURLOPT_FOLLOWLOCATION => true,
-      CURLOPT_TIMEOUT => 20,
-      CURLOPT_SSL_VERIFYPEER => false,
-      CURLOPT_USERAGENT => 'WordPress/GenerarImagen',
-    ]);
-    $data = curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    // Función para descargar imagen
+    $download_image = function(string $url) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+        $data = curl_exec($ch);
+        curl_close($ch);
 
-    if (!$data || $status != 200) {
-      error_log("❌ Error descargando $url: HTTP $status");
-      return null;
-    }
+        if (!$data) return null;
+        $tmp = wp_tempnam();
+        file_put_contents($tmp, $data);
 
-    $tmp = wp_tempnam();
-    file_put_contents($tmp, $data);
+        try { $m = new Imagick($tmp); } catch (\Throwable $e) { @unlink($tmp); return null; }
+        @unlink($tmp);
+        return $m;
+    };
 
-    try {
-      $m = new Imagick($tmp);
-    } catch (\Throwable $e) {
-      error_log("❌ Error cargando imagen en Imagick: " . $e->getMessage());
-      @unlink($tmp);
-      return null;
-    }
-
-    @unlink($tmp);
-    $m->setImageAlphaChannel(Imagick::ALPHACHANNEL_ACTIVATE);
-    return $m;
-  };
-
-  // LAYERS
-  if (!empty($payload['layers'])) {
-    foreach ($payload['layers'] as $layer) {
-      if (($layer['type'] ?? '') === 'image' && !empty($layer['url'])) {
-        $lay = $download_image($layer['url']);
-        if (!$lay) continue;
-        $w = intval($layer['width'] ?? $lay->getImageWidth());
-        $h = intval($layer['height'] ?? $lay->getImageHeight());
-        $lay->resizeImage($w, $h, Imagick::FILTER_LANCZOS, 1);
-
-        if (!empty($layer['rotation'])) {
-          $lay->rotateImage(new ImagickPixel('transparent'), floatval($layer['rotation']));
-        }
-
-        if (isset($layer['opacity'])) {
-          $lay->evaluateImage(Imagick::EVALUATE_MULTIPLY, floatval($layer['opacity']), Imagick::CHANNEL_ALPHA);
-        }
-
-        $img->compositeImage($lay, Imagick::COMPOSITE_OVER, intval($layer['x'] ?? 0), intval($layer['y'] ?? 0));
-        $lay->destroy();
-      } elseif (($layer['type'] ?? '') === 'text' && !empty($layer['text'])) {
-        $draw = new ImagickDraw();
-        $draw->setFillColor(new ImagickPixel($layer['color'] ?? '#000000'));
-        $draw->setFontSize(intval($layer['size'] ?? 40));
-        $img->annotateImage($draw, intval($layer['x'] ?? 0), intval($layer['y'] ?? 0), 0, $layer['text']);
-      }
-    }
-  }
-
-  // SPEAKERS (GRID CON FOTOS)
-  else if (!empty($payload['speakers']) && is_array($payload['speakers'])) {
+    // Grid 3x2
     $speakers = $payload['speakers'];
+    $cols = 3;
+    $rows = 2;
     $n = count($speakers);
-
-    if ($n == 6) { $cols = 3; $rows = 2; }
-    elseif ($n == 7) { $cols = 4; $rows = 2; }
-    elseif ($n == 9) { $cols = 3; $rows = 3; }
-    else {
-      $cols = ceil(sqrt($n));
-      $rows = ceil($n / $cols);
-    }
 
     $padding = intval($payload['autoLayout']['padding'] ?? 40);
     $gutter  = intval($payload['autoLayout']['gutter'] ?? 20);
 
     $gridW = $W - 2*$padding;
     $gridH = $H - 2*$padding;
-    $cellW = intval(($gridW - ($cols-1)*$gutter) / $cols);
-    $cellH = intval(($gridH - ($rows-1)*$gutter) / $rows);
-
-    error_log("📐 Grid: {$cols}x{$rows} | Celda: {$cellW}x{$cellH}");
+    $cellW = intval(($gridW - ($cols-1)*$gutter)/$cols);
+    $cellH = intval(($gridH - ($rows-1)*$gutter)/$rows);
 
     for ($i=0; $i<$n; $i++) {
-      $c = $i % $cols;
-      $r = intdiv($i, $cols);
-      $x = $padding + $c*($cellW + $gutter);
-      $y = $padding + $r*($cellH + $gutter);
+        $c = $i % $cols;
+        $r = intdiv($i, $cols);
+        $x = $padding + $c*($cellW + $gutter);
+        $y = $padding + $r*($cellH + $gutter);
 
-      $url = $speakers[$i]['photo'] ?? null;
-      if (!$url) {
-        error_log("⚠️ Speaker $i sin foto");
-        continue;
-      }
+        $url = $speakers[$i]['photo'] ?? null;
+        if (!$url) continue;
 
-      $photo = $download_image($url);
-      if (!$photo) {
-        error_log("⚠️ Error descargando foto speaker $i: $url");
-        continue;
-      }
+        $photo = $download_image($url);
+        if (!$photo) continue;
 
-      error_log("📸 Foto original: " . $photo->getImageWidth() . "x" . $photo->getImageHeight());
+        $photo->thumbnailImage($cellW, $cellH, true);
 
-      // Crear fondo blanco
-      $bg_cell = new Imagick();
-      $bg_cell->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
-      $bg_cell->setImageFormat('png');
+        // Fondo blanco
+        $bg_cell = new Imagick();
+        $bg_cell->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
+        $bg_cell->setImageFormat('png');
 
-      // Escalar foto simple
-      $photo->scaleImage($cellW, $cellH, true);
-      
-      error_log("📸 Foto escalada a: " . $photo->getImageWidth() . "x" . $photo->getImageHeight());
+        // Centrar la foto
+        $offX = intval(($cellW - $photo->getImageWidth()) / 2);
+        $offY = intval(($cellH - $photo->getImageHeight()) / 2);
+        $bg_cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
 
-      // Centrar foto
-      $offX = intval(($cellW - $photo->getImageWidth()) / 2);
-      $offY = intval(($cellH - $photo->getImageHeight()) / 2);
-      
-      error_log("📍 Offset: ({$offX}, {$offY})");
+        $img->compositeImage($bg_cell, Imagick::COMPOSITE_OVER, $x, $y);
 
-      // Asegurar que ambas tienen el mismo formato
-      $bg_cell->setImageFormat('png');
-      $photo->setImageFormat('png');
-      
-      $result = $bg_cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
-      error_log("✍️ Composite resultado: " . ($result ? 'OK' : 'FAIL'));
-
-      // Dibujar círculo como borde visual
-      $radius = intval(min($cellW, $cellH) / 2) - 5;
-      $draw = new ImagickDraw();
-      $draw->setFillColor('none');
-      $draw->setStrokeColor('#cccccc');
-      $draw->setStrokeWidth(2);
-      $draw->circle($cellW/2, $cellH/2, $cellW/2 + $radius, $cellH/2);
-      $bg_cell->drawImage($draw);
-
-      // Componer en canvas
-      $img->compositeImage($bg_cell, Imagick::COMPOSITE_OVER, $x, $y);
-
-      error_log("✅ Speaker $i colocado en ({$x}, {$y})");
-
-      $photo->destroy();
-      $bg_cell->destroy();
+        $photo->destroy();
+        $bg_cell->destroy();
     }
 
-    // Título
+    // Título opcional
     if (!empty($payload['event_title'])) {
-      $draw = new ImagickDraw();
-      $draw->setFillColor('#111111');
-      $draw->setFontSize(36);
-      $img->annotateImage($draw, $padding, $H - 30, 0, $payload['event_title']);
+        $draw = new ImagickDraw();
+        $draw->setFillColor('#111111');
+        $draw->setFontSize(36);
+        $img->annotateImage($draw, $padding, $H - 30, 0, $payload['event_title']);
     }
-  } else {
-    return new WP_REST_Response(['error' => 'Debes enviar "layers" o "speakers"'], 400);
-  }
 
-  // --- GUARDAR Y SUBIR ---
-  $format = strtolower($payload['output']['format'] ?? 'jpg');
-  $quality = intval($payload['output']['quality'] ?? 90);
-  $filename = sanitize_file_name(($payload['output']['filename'] ?? ('collage-'.time())) . '.' . $format);
+    // Guardar y subir
+    $format = strtolower($payload['output']['format'] ?? 'jpg');
+    $quality = intval($payload['output']['quality'] ?? 90);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'collage_'.time()).'.'.$format);
 
-  // Si es JPG, crear fondo opaco primero
-  if ($format === 'jpg' || $format === 'jpeg') {
-    $bg_layer = new Imagick();
-    $bg_layer->newImage($W, $H, new ImagickPixel('#ffffff'));
-    $bg_layer->setImageFormat('jpeg');
-    $bg_layer->compositeImage($img, Imagick::COMPOSITE_OVER, 0, 0);
+    if ($format === 'jpg' || $format === 'jpeg') {
+        $bg_layer = new Imagick();
+        $bg_layer->newImage($W, $H, new ImagickPixel('#ffffff'));
+        $bg_layer->setImageFormat('jpeg');
+        $bg_layer->compositeImage($img, Imagick::COMPOSITE_OVER, 0, 0);
+        $img->destroy();
+        $img = $bg_layer;
+        $img->setImageCompressionQuality($quality);
+    } elseif ($format === 'webp') {
+        $img->setImageFormat('webp');
+        $img->setImageCompressionQuality($quality);
+    } else {
+        $img->setImageFormat('png');
+    }
+
+    $blob = $img->getImagesBlob();
     $img->destroy();
-    $img = $bg_layer;
-    $img->setImageCompressionQuality($quality);
-  } elseif ($format === 'webp') {
-    $img->setImageFormat('webp');
-    $img->setImageCompressionQuality($quality);
-  } else {
-    $img->setImageFormat('png');
-  }
 
-  $blob = $img->getImagesBlob();
-  $img->destroy();
+    $upload = wp_upload_bits($filename, null, $blob);
+    if (!empty($upload['error'])) return new WP_REST_Response(['error'=>'Fallo subiendo a Medios'], 500);
 
-  $upload = wp_upload_bits($filename, null, $blob);
-  if (!empty($upload['error'])) {
-    error_log("❌ Error en wp_upload_bits: " . $upload['error']);
-    return new WP_REST_Response(['error' => 'Fallo subiendo a Medios'], 500);
-  }
+    $filetype = wp_check_filetype($upload['file']);
+    $attach_id = wp_insert_attachment([
+        'post_mime_type'=>$filetype['type'],
+        'post_title'=>preg_replace('/\.[^.]+$/','',$filename),
+        'post_status'=>'inherit'
+    ], $upload['file']);
+    require_once ABSPATH.'wp-admin/includes/image.php';
+    wp_generate_attachment_metadata($attach_id, $upload['file']);
+    $url = wp_get_attachment_url($attach_id);
 
-  $filetype = wp_check_filetype($upload['file']);
-  $attachment = [
-    'post_mime_type' => $filetype['type'],
-    'post_title'     => preg_replace('/\.[^.]+$/', '', $filename),
-    'post_content'   => '',
-    'post_status'    => 'inherit'
-  ];
-
-  $attach_id = wp_insert_attachment($attachment, $upload['file']);
-  require_once ABSPATH.'wp-admin/includes/image.php';
-  wp_generate_attachment_metadata($attach_id, $upload['file']);
-  $url = wp_get_attachment_url($attach_id);
-
-  error_log("✅ Imagen generada: $url");
-
-  return new WP_REST_Response(['url' => $url, 'attachment_id' => $attach_id], 200);
+    return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
