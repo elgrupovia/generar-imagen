@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Generar Collage Speakers con Logs
  * Description: Genera un collage tipo cartel de evento con speakers, logos, sponsors, banner y logotipo superior.
- * Version: 1.4.0
+ * Version: 1.5.0
  * Author: GrupoVia
  */
 
@@ -109,34 +109,36 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $padding = intval($payload['autoLayout']['padding'] ?? 80);
     $gutter  = intval($payload['autoLayout']['gutter'] ?? 30);
 
-    // 🏁 Banner centrado (no ocupa todo el ancho, con margen superior)
+    // 🏁 Banner centrado (ocupa 55% del ancho, con margen superior)
     if (!empty($payload['banner'])) {
         $bannerUrl = $payload['banner']['photo'] ?? null;
         if ($bannerUrl) {
             $banner = $download_image($bannerUrl);
-            $bannerW = intval($W * 0.75); // ocupa el 75% del ancho total
-            $bannerH = intval($H * 0.25); // altura proporcional
+            $bannerW = intval($W * 0.55); // 55% del ancho total
+            $bannerH = intval($H * 0.20); // 20% de alto
             $banner = safe_thumbnail($banner, $bannerW, $bannerH, $bannerUrl, 'banner centrado');
             if ($banner) {
                 $x = intval(($W - $banner->getImageWidth()) / 2);
-                $y = 40; // margen superior
+                $y = 60; // margen superior
                 $img->compositeImage($banner, Imagick::COMPOSITE_OVER, $x, $y);
                 error_log("🏁 Banner centrado agregado ($bannerUrl)");
             }
         }
     }
 
-    // ✨ Logo superior derecho
+    // ✨ Logo superior derecho (pequeño y visible)
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
         if ($logoUrl) {
             $headerLogo = $download_image($logoUrl);
-            $headerLogo = safe_thumbnail($headerLogo, intval($W * 0.15), 0, $logoUrl, 'logo superior');
+            $headerLogo = safe_thumbnail($headerLogo, intval($W * 0.10), 0, $logoUrl, 'logo superior'); // 10% ancho
             if ($headerLogo) {
-                $x = $W - $headerLogo->getImageWidth() - 60;
-                $y = 60;
+                $x = $W - $headerLogo->getImageWidth() - 70;
+                $y = 80; // un poco más abajo del borde
                 $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
                 error_log("✨ Logo superior derecho agregado ($logoUrl)");
+            } else {
+                error_log("⚠️ Logo no pudo cargarse ($logoUrl)");
             }
         }
     }
@@ -148,12 +150,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $draw->setFontSize(80);
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-        $titleY = intval($H * 0.32);
+        $titleY = intval($H * 0.30);
         $img->annotateImage($draw, $W / 2, $titleY, 0, $payload['event_title']);
         error_log("📝 Título agregado debajo del banner: ".$payload['event_title']);
     }
 
-    // 👤 Speakers
+    // 👤 Speakers (2 filas de 3)
     $speakers = $payload['speakers'] ?? [];
     $cols = 3;
     $rows = ceil(count($speakers) / 3);
@@ -215,7 +217,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
 
-    // 📤 Exportar y subir
+    // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
     $filename = sanitize_file_name(($payload['output']['filename'] ?? 'collage_evento').'.'.$format);
 
