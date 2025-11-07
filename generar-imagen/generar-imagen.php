@@ -18,34 +18,32 @@ add_action('rest_api_init', function () {
     ]);
 });
 
+
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('✅ Plugin Generar Collage cargado');
+    error_log('✅ Generando collage con distribución centrada');
 
     if (!class_exists('Imagick')) {
-        error_log('❌ Imagick no disponible');
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
     }
 
     $token = $request->get_param('token');
     if ($token !== 'SECRETO') {
-        error_log('❌ Token incorrecto: ' . $token);
         return new WP_REST_Response(['error'=>'Unauthorized'], 401);
     }
 
     $payload = $request->get_json_params();
     if (!$payload) {
-        error_log('❌ No se recibió payload');
         return new WP_REST_Response(['error'=>'No se recibió payload'], 400);
     }
 
-    $W  = intval($payload['canvas']['width'] ?? 1600);
-    $H  = intval($payload['canvas']['height'] ?? 2200);
+    $W = intval($payload['canvas']['width'] ?? 1600);
+    $H = intval($payload['canvas']['height'] ?? 2200);
     $bg = $payload['canvas']['background'] ?? '#ffffff';
 
-    // Crear lienzo base
+    // 🖼️ Crear lienzo base con fondo (imagen o color)
     $img = new Imagick();
     if (filter_var($bg, FILTER_VALIDATE_URL)) {
-        error_log("🖼️ Fondo detectado como imagen: $bg");
+        error_log("🖼️ Fondo es imagen: $bg");
         $bg_image = new Imagick();
         $bg_image->readImage($bg);
         $bg_image->resizeImage($W, $H, Imagick::FILTER_LANCZOS, 1);
@@ -55,8 +53,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
     $img->setImageFormat('png');
 
+    // Descarga auxiliar
     $download_image = function(string $url) {
-        error_log("⬇️ Descargando imagen: $url");
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -79,87 +77,90 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $padding = intval($payload['autoLayout']['padding'] ?? 80);
     $gutter  = intval($payload['autoLayout']['gutter'] ?? 30);
 
-    // ====== SECCIÓN 1: Título ======
+    // 🏷️ Título arriba
     if (!empty($payload['event_title'])) {
         $draw = new ImagickDraw();
         $draw->setFillColor('#000000');
-        $draw->setFontSize(80);
+        $draw->setFontSize(90);
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-        $img->annotateImage($draw, $W/2, 150, 0, $payload['event_title']);
+        $img->annotateImage($draw, $W / 2, 180, 0, $payload['event_title']);
         error_log("📝 Título agregado: ".$payload['event_title']);
     }
 
-    // ====== SECCIÓN 2: SPEAKERS ======
+    // 👤 Speakers — dos filas de 3 centradas
     $speakers = $payload['speakers'] ?? [];
     $n = count($speakers);
-    $cols = ($n > 6) ? 4 : 3;
-    $rows = ceil($n / $cols);
+    $cols = 3;
+    $rows = ceil($n / 3);
 
-    $areaH = intval($H * 0.55);
-    $startY = intval($H * 0.2);
+    $photoW = 380;
+    $photoH = 380;
+    $startY = 400;
 
-    $gridW = $W - 2*$padding;
-    $gridH = $areaH - 2*$padding;
-    $cellW = intval(($gridW - ($cols-1)*$gutter)/$cols);
-    $cellH = intval(($gridH - ($rows-1)*$gutter)/$rows);
+    $totalRowW = $cols * $photoW + ($cols - 1) * $gutter;
+    $offsetX = ($W - $totalRowW) / 2;
 
-    for ($i=0; $i<$n; $i++) {
-        $c = $i % $cols;
-        $r = intdiv($i, $cols);
-        $x = $padding + $c*($cellW + $gutter);
-        $y = $startY + $r*($cellH + $gutter);
+    $index = 0;
+    for ($r = 0; $r < $rows; $r++) {
+        $y = $startY + $r * ($photoH + $gutter);
+        $numInRow = min($cols, $n - $index);
+        $rowW = $numInRow * $photoW + ($numInRow - 1) * $gutter;
+        $x = ($W - $rowW) / 2;
+        for ($c = 0; $c < $numInRow; $c++) {
+            $sp = $speakers[$index++] ?? null;
+            if (!$sp) continue;
+            $photo = $download_image($sp['photo']);
+            if (!$photo) continue;
 
-        $photo = $download_image($speakers[$i]['photo']);
-        if (!$photo) continue;
-        $photo->thumbnailImage($cellW, $cellH, true);
-
-        // Fondo blanco para la celda
-        $cell = new Imagick();
-        $cell->newImage($cellW, $cellH, new ImagickPixel('#ffffff'));
-        $offX = intval(($cellW - $photo->getImageWidth())/2);
-        $offY = intval(($cellH - $photo->getImageHeight())/2);
-        $cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
-        $img->compositeImage($cell, Imagick::COMPOSITE_OVER, $x, $y);
+            $photo->thumbnailImage($photoW, $photoH, true);
+            $cell = new Imagick();
+            $cell->newImage($photoW, $photoH, new ImagickPixel('#ffffff'));
+            $offX = intval(($photoW - $photo->getImageWidth())/2);
+            $offY = intval(($photoH - $photo->getImageHeight())/2);
+            $cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
+            $img->compositeImage($cell, Imagick::COMPOSITE_OVER, $x, $y);
+            $x += $photoW + $gutter;
+        }
     }
 
-    // ====== SECCIÓN 3: LOGOS ======
+    // 💼 Logos pequeños — una fila centrada
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
-        $logoAreaH = intval($H * 0.15);
-        $yStart = $H - $logoAreaH - 200;
-        $maxW = 250;
-        $x = $padding;
+        $logoY = $H - 500;
+        $maxW = 220;
+        $totalW = count($logos) * $maxW + (count($logos) - 1) * 30;
+        $x = ($W - $totalW) / 2;
         foreach ($logos as $logo) {
             $m = $download_image($logo['photo']);
             if (!$m) continue;
             $m->thumbnailImage($maxW, 0);
-            $img->compositeImage($m, Imagick::COMPOSITE_OVER, $x, $yStart);
-            $x += $maxW + 40;
+            $img->compositeImage($m, Imagick::COMPOSITE_OVER, $x, $logoY);
+            $x += $maxW + 30;
         }
-        error_log("🏷️ Logos agregados");
+        error_log("🏷️ Logos colocados centrados");
     }
 
-    // ====== SECCIÓN 4: SPONSORS ======
+    // 🤝 Sponsors — segunda fila centrada debajo de logos
     $sponsors = $payload['sponsors'] ?? [];
     if (!empty($sponsors)) {
-        $yStart = $H - 180;
-        $x = $padding;
-        $maxW = 200;
+        $sponsorY = $H - 250;
+        $maxW = 300;
+        $totalW = count($sponsors) * $maxW + (count($sponsors) - 1) * 50;
+        $x = ($W - $totalW) / 2;
         foreach ($sponsors as $sp) {
             $m = $download_image($sp['photo']);
             if (!$m) continue;
             $m->thumbnailImage($maxW, 0);
-            $img->compositeImage($m, Imagick::COMPOSITE_OVER, $x, $yStart);
-            $x += $maxW + 30;
+            $img->compositeImage($m, Imagick::COMPOSITE_OVER, $x, $sponsorY);
+            $x += $maxW + 50;
         }
-        error_log("🤝 Sponsors agregados");
+        error_log("🤝 Sponsors colocados centrados");
     }
 
-    // ====== EXPORTAR ======
+    // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $quality = intval($payload['output']['quality'] ?? 90);
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'collage_'.time()).'.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'collage_evento').'.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -167,9 +168,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $bg_layer->compositeImage($img, Imagick::COMPOSITE_OVER, 0, 0);
         $img = $bg_layer;
         $img->setImageFormat('jpeg');
-        $img->setImageCompressionQuality($quality);
-    } else {
-        $img->setImageFormat('png');
+        $img->setImageCompressionQuality(90);
     }
 
     $blob = $img->getImagesBlob();
@@ -177,7 +176,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     $upload = wp_upload_bits($filename, null, $blob);
     if (!empty($upload['error'])) {
-        error_log("❌ Error subiendo a Medios: ".$upload['error']);
         return new WP_REST_Response(['error'=>'Fallo subiendo a Medios'], 500);
     }
 
@@ -191,7 +189,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada y subida: $url");
+    error_log("✅ Imagen final generada: $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
+
