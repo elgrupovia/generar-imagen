@@ -119,34 +119,31 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $ponentsEnd = intval($H * 0.85);
     $sponsorsStart = intval($H * 0.85);
 
-    // 🟢 Caja verde encabezado con borde redondeado
-    $headerBoxW = intval($W * 0.40);
-    $headerBoxH = intval($headerEnd * 0.85);
+    // 🟢 Banner verde centrado con borde redondeado
+    $bannerBoxW = intval($W * 0.65);
+    $bannerBoxH = intval($headerEnd * 0.80);
     
-    $headerBox = new Imagick();
-    $headerBox->newImage($headerBoxW, $headerBoxH, new ImagickPixel('#2ecc71'));
-    
-    // Aplicar esquinas redondeadas con ImagickDraw
+    // Crear rectángulo redondeado
     $draw = new ImagickDraw();
     $draw->setFillColor('#2ecc71');
-    $draw->setStrokeColor('#2ecc71');
+    $draw->setStrokeColor('none');
     $draw->setStrokeWidth(0);
-    $radius = 30;
-    $draw->roundRectangle(0, 0, $headerBoxW, $headerBoxH, $radius, $radius);
+    $radius = 40;
+    $draw->roundRectangle(0, 0, $bannerBoxW, $bannerBoxH, $radius, $radius);
     
     // Crear imagen con esquinas redondeadas
-    $rounded = new Imagick();
-    $rounded->newImage($headerBoxW, $headerBoxH, new ImagickPixel('transparent'));
-    $rounded->drawImage($draw);
+    $headerBox = new Imagick();
+    $headerBox->newImage($bannerBoxW, $bannerBoxH, new ImagickPixel('transparent'));
+    $headerBox->drawImage($draw);
+    $headerBox->setImageFormat('png');
     
-    // Combinar
-    $headerBox->newImage($headerBoxW, $headerBoxH, new ImagickPixel('#2ecc71'));
-    $headerBox->compositeImage($rounded, Imagick::COMPOSITE_IN, 0, 0);
-    
-    $img->compositeImage($headerBox, Imagick::COMPOSITE_OVER, 50, 30);
-    error_log("🟢 Caja encabezado verde agregada");
+    // Posicionar en el centro horizontalmente
+    $bannerX = intval(($W - $bannerBoxW) / 2);
+    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20;
+    $img->compositeImage($headerBox, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
+    error_log("🟢 Banner verde centrado agregado");
 
-    // 📝 Título "FLEX LIVING"
+    // 📝 Título "FLEX LIVING" centrado en el banner
     $montserratPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf';
     $fontPath = file_exists($montserratPath) ? $montserratPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
@@ -156,7 +153,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $draw->setFontSize(76);
     $draw->setFontWeight(900);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-    $img->annotateImage($draw, 270, 60, 0, $payload['header_title'] ?? 'FLEX LIVING');
+    $img->annotateImage($draw, $W / 2, intval($bannerY + $bannerBoxH / 2 - 50), 0, $payload['header_title'] ?? 'FLEX LIVING');
 
     // 📝 Subtítulo "BOOM! PROYECTOS"
     $draw = new ImagickDraw();
@@ -165,7 +162,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $draw->setFontSize(36);
     $draw->setFontWeight(700);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-    $img->annotateImage($draw, 270, 120, 0, $payload['header_subtitle'] ?? 'BOOM! PROYECTOS INMOBILIARIOS');
+    $img->annotateImage($draw, $W / 2, intval($bannerY + $bannerBoxH / 2 + 10), 0, $payload['header_subtitle'] ?? 'BOOM! PROYECTOS INMOBILIARIOS');
 
     // 📝 Ciudad "Valencia"
     $draw = new ImagickDraw();
@@ -174,9 +171,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $draw->setFontSize(28);
     $draw->setFontWeight(600);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-    $img->annotateImage($draw, 270, 155, 0, $payload['header_city'] ?? 'Valencia');
+    $img->annotateImage($draw, $W / 2, intval($bannerY + $bannerBoxH / 2 + 50), 0, $payload['header_city'] ?? 'Valencia');
 
-    // ✨ Logo superior derecho
+    // ✨ Logo superior derecho (fuera del banner verde)
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
         if ($logoUrl) {
@@ -185,9 +182,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $headerLogo = safe_thumbnail($headerLogo, intval($W * 0.14), 0, $logoUrl, 'logo header');
                 if ($headerLogo) {
                     $x = $W - $headerLogo->getImageWidth() - 40;
-                    $y = 40;
+                    $y = 30;
                     $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
-                    error_log("✨ Logo header agregado");
+                    error_log("✨ Logo header agregado en esquina superior derecha");
                 }
             }
         }
