@@ -18,6 +18,10 @@ add_action('rest_api_init', function () {
     ]);
 });
 
+/**
+ * Función de redimensionado seguro. Mantenemos el thumbnailImage original,
+ * pero usaremos lógica de coverImage en la función principal para el fondo.
+ */
 function safe_thumbnail($imagick, $w, $h, $url, $context) {
     try {
         if ($imagick && $imagick->getImageWidth() > 0 && $imagick->getImageHeight() > 0) {
@@ -60,18 +64,35 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $H = intval($payload['canvas']['height'] ?? 2400);
     $bg = $payload['canvas']['background'] ?? '#1a1a1a';
 
-    // 🖼️ Crear lienzo base con fondo
+    // 🖼️ Crear lienzo base con fondo que COBRE TODO
     $img = new Imagick();
     if (filter_var($bg, FILTER_VALIDATE_URL)) {
         $bg_image = new Imagick();
-        $bg_image->readImage($bg);
-        $bg_image = safe_thumbnail($bg_image, $W, $H, $bg, 'fondo');
-        if ($bg_image) {
-            $img = $bg_image;
-            // Difuminar ligeramente el fondo
-            $img->blurImage(2, 1);
-            error_log("🖼️ Fondo aplicado y difuminado");
-        } else {
+        try {
+            $bg_image->readImage($bg);
+
+            if ($bg_image->getImageWidth() > 0 && $bg_image->getImageHeight() > 0) {
+                // Escalar para cubrir todo (cover logic)
+                $scaleRatio = max($W / $bg_image->getImageWidth(), $H / $bg_image->getImageHeight());
+                $newW = (int)($bg_image->getImageWidth() * $scaleRatio);
+                $newH = (int)($bg_image->getImageHeight() * $scaleRatio);
+
+                $bg_image->scaleImage($newW, $newH);
+
+                // Recortar si es necesario
+                $x_offset = (int)(($newW - $W) / 2);
+                $y_offset = (int)(($newH - $H) / 2);
+                $bg_image->cropImage($W, $H, $x_offset, $y_offset);
+
+                $img = $bg_image;
+                $img->blurImage(2, 1); // Difuminar
+                error_log("🖼️ Fondo aplicado, escalado y difuminado para cubrir todo el lienzo");
+            } else {
+                 error_log("⚠️ Imagen de fondo inválida o no disponible: $bg. Usando color sólido.");
+                 $img->newImage($W, $H, new ImagickPixel($bg));
+            }
+        } catch (Exception $e) {
+            error_log("❌ Error leyendo imagen de fondo: ".$e->getMessage());
             $img->newImage($W, $H, new ImagickPixel($bg));
         }
     } else {
@@ -108,16 +129,16 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
-    // 📐 Zonas de diseño
+    // 📐 Zonas de diseño (Reorganizadas)
     $headerStart = 0;
     $headerEnd = intval($H * 0.15);
     $eventInfoStart = $headerEnd;
     $eventInfoEnd = intval($H * 0.22);
     $speakersStart = $eventInfoEnd;
-    $speakersEnd = intval($H * 0.73);
-    $ponentsStart = intval($H * 0.73);
-    $ponentsEnd = intval($H * 0.85);
-    $sponsorsStart = intval($H * 0.85);
+    $speakersEnd = intval($H * 0.70); 
+    $logosStart = $speakersEnd + 30;
+    $logosEnd = intval($H * 0.83); 
+    $sponsorsStart = $logosEnd;
 
     // 🟢 Banner verde centrado con borde redondeado
     $bannerBoxW = intval($W * 0.65);
@@ -173,7 +194,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
     $img->annotateImage($draw, $W / 2, intval($bannerY + $bannerBoxH / 2 + 50), 0, $payload['header_city'] ?? 'Valencia');
 
-    // ✨ Logo superior derecho (fuera del banner verde)
+    // ✨ Logo superior derecho
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
         if ($logoUrl) {
@@ -209,10 +230,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $totalSpeakers = count($speakers);
         $cols = 3;
         $rows = ceil($totalSpeakers / $cols);
-        $photoW = intval($W / 4.5);
+        
+        // Ajustes para hacer los speakers más pequeños
+        $photoW = intval($W / 4.5); 
         $photoH = intval($photoW);
-        $gapX = 50;
-        $gapY = 60;
+        $gapX = 50; 
+        $gapY = 60; 
         $textHeight = 90;
 
         $availableHeight = $speakersEnd - $speakersStart;
@@ -238,10 +261,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $photo = safe_thumbnail($photo, $photoW, $photoH, $photoUrl, 'speaker');
                 if (!$photo) continue;
 
-                // Borde redondeado
-                $photo->borderImage(new ImagickPixel('white'), 6, 6);
+                // ELIMINADO: Borde blanco ($photo->borderImage...)
                 
-                // Sombra suave (usando clone moderno)
+                // Sombra suave
                 try {
                     $shadow = new Imagick();
                     $shadow->readImageBlob($photo->getImageBlob());
@@ -289,7 +311,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("🎤 Grid: $rows filas x $cols columnas");
     }
 
-    // 🏷️ Logos de Ponentes
+    // 🏷️ Logos de Ponentes (Posición ajustada)
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
         $draw = new ImagickDraw();
@@ -298,11 +320,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $draw->setFontSize(30);
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_LEFT);
-        $img->annotateImage($draw, 50, $ponentsStart + 42, 0, 'Ponentes:');
+        $img->annotateImage($draw, 50, $logosStart + 42, 0, 'Ponentes:');
 
-        $logosHeight = $ponentsEnd - $ponentsStart - 15;
+        $logosHeight = $logosEnd - $logosStart - 15;
         $logoMaxH = intval($logosHeight * 0.80);
-        $logoY = $ponentsStart + intval(($logosHeight - $logoMaxH) / 2);
+        $logoY = $logosStart + intval(($logosHeight - $logoMaxH) / 2) + 20; 
         
         $maxW = min(180, intval(($W - 280 - (count($logos) - 1) * 20) / count($logos)));
         $x = 280;
@@ -317,7 +339,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("💼 ".count($logos)." logos ponentes");
     }
 
-    // 🤝 Patrocinadores con fondo blanco
+    // 🤝 Patrocinadores con fondo blanco (Posición ajustada)
     $sponsors = $payload['sponsors'] ?? [];
     if (!empty($sponsors)) {
         // Fondo blanco para sponsors
