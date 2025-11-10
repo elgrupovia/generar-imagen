@@ -53,6 +53,37 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
     }
 }
 
+/**
+ * Aplica esquinas redondeadas a una imagen Imagick.
+ */
+function gi_round_corners($imagick, $radius) {
+    if (!$imagick) return $imagick;
+
+    try {
+        $width = $imagick->getImageWidth();
+        $height = $imagick->getImageHeight();
+
+        $draw = new ImagickDraw();
+        $draw->setFillColor(new ImagickPixel('black')); // Color para la máscara
+        $draw->setStrokeColor(new ImagickPixel('black'));
+        $draw->roundRectangle(0, 0, $width - 1, $height - 1, $radius, $radius);
+
+        $mask = new Imagick();
+        $mask->newImage($width, $height, new ImagickPixel('transparent'));
+        $mask->drawImage($draw);
+        $mask->setImageFormat('png');
+
+        $imagick->compositeImage($mask, Imagick::COMPOSITE_DSTIN, 0, 0); // Aplica la máscara
+        $mask->destroy();
+        
+        return $imagick;
+    } catch (Exception $e) {
+        error_log("❌ Error al redondear esquinas: ".$e->getMessage());
+        return $imagick; // Retorna la imagen original si hay error
+    }
+}
+
+
 function gi_generate_collage_logs(WP_REST_Request $request) {
     error_log('✅ Generando plantilla evento inmobiliario profesional');
 
@@ -270,7 +301,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                 $photoBase = $download_image($photoUrl);
                 
-                // *** MODIFICACIÓN CLAVE: Usamos safe_thumbnail con ancho y alto fijos para forzar la cobertura exacta ***
+                // Usamos safe_thumbnail con ancho y alto fijos para forzar la cobertura exacta
                 $photoBase = safe_thumbnail($photoBase, $photoW, $photoImageHeight, $photoUrl, 'speaker');
                 if (!$photoBase) continue;
 
@@ -319,6 +350,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                     error_log("💥 Error texto en speaker canvas: ".$e->getMessage());
                 }
 
+                // *** NUEVO: Redondear esquinas del speakerCanvas completo ***
+                $cornerRadius = 30; // Ajusta este valor para un radio mayor o menor
+                $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
+                if (!$speakerCanvas) continue; // Si la función falla, salta este speaker
+                 
                 // Sombra suave (aplicada al speakerCanvas completo)
                 try {
                     $shadow = new Imagick();
