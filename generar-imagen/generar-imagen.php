@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Generar Collage Speakers con Logs
  * Description: Genera un collage tipo cartel de evento con speakers, logos, sponsors, banner y logotipo superior.
- * Version: 1.6.0
+ * Version: 1.7.0
  * Author: GrupoVia
  */
 
@@ -46,7 +46,7 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
  * Función principal del collage
  */
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('✅ Generando collage con banner centrado y logo superior derecho');
+    error_log('✅ Generando collage con estructura mejorada de espacios');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -115,17 +115,29 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $padding = intval($payload['autoLayout']['padding'] ?? 80);
     $gutter  = intval($payload['autoLayout']['gutter'] ?? 30);
 
+    // 📐 Definir zonas de la composición (estructura de capas - ARMONIOSO)
+    $headerHeight = intval($H * 0.12);        // Banner + logo: 0% - 12%
+    $titleStart = intval($H * 0.12);
+    $titleEnd = intval($H * 0.18);            // Título: 12% - 18%
+    $speakersAreaStart = intval($H * 0.18);   // Speakers: 18% - 68%
+    $speakersAreaEnd = intval($H * 0.68);
+    $logosAreaStart = intval($H * 0.68);      // Logos: 68% - 82%
+    $logosAreaEnd = intval($H * 0.82);
+    $sponsorsAreaStart = intval($H * 0.82);   // Sponsors: 82% - 100%
+
+    error_log("📏 Estructura: Header[$headerHeight] Título[".($titleEnd-$titleStart)."] Speakers[".($speakersAreaEnd-$speakersAreaStart)."] Logos[".($logosAreaEnd-$logosAreaStart)."] Sponsors[".($H-$sponsorsAreaStart)."]");
+
     // 🏁 Banner centrado (55% del ancho, margen superior)
     if (!empty($payload['banner'])) {
         $bannerUrl = $payload['banner']['photo'] ?? null;
         if ($bannerUrl) {
             $banner = $download_image($bannerUrl);
             $bannerW = intval($W * 0.55);
-            $bannerH = intval($H * 0.20);
+            $bannerH = intval($headerHeight * 0.65);
             $banner = safe_thumbnail($banner, $bannerW, $bannerH, $bannerUrl, 'banner centrado');
             if ($banner) {
                 $x = intval(($W - $banner->getImageWidth()) / 2);
-                $y = 60;
+                $y = intval($headerHeight * 0.10);
                 $img->compositeImage($banner, Imagick::COMPOSITE_OVER, $x, $y);
                 error_log("🏁 Banner centrado agregado ($bannerUrl)");
             }
@@ -159,7 +171,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                         $headerLogo = safe_thumbnail($headerLogo, $targetW, 0, $logoUrl, 'logo superior derecho');
                         if ($headerLogo) {
                             $x = $W - $headerLogo->getImageWidth() - 80;
-                            $y = 60;
+                            $y = intval($headerHeight * 0.10);
                             $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
                             error_log("✨ Logo superior derecho agregado correctamente ($logoUrl)");
                         }
@@ -175,125 +187,144 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
 
-    // 📝 Título centrado debajo del banner
+    // 📝 Título centrado
     if (!empty($payload['event_title'])) {
         $draw = new ImagickDraw();
         $draw->setFillColor('#FFFFFF');
         $draw->setFontSize(80);
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-        $titleY = intval($H * 0.30);
+        $titleY = intval($speakersAreaStart + $titleHeight / 2);
         $img->annotateImage($draw, $W / 2, $titleY, 0, $payload['event_title']);
-        error_log("📝 Título agregado debajo del banner: ".$payload['event_title']);
+        error_log("📝 Título agregado: ".$payload['event_title']);
     }
 
     // 👤 Speakers (3 por fila con nombre y cargo debajo)
-$speakers = $payload['speakers'] ?? [];
-if (!empty($speakers)) {
-    error_log("🎤 Procesando ".count($speakers)." speakers...");
+    $speakers = $payload['speakers'] ?? [];
+    if (!empty($speakers)) {
+        error_log("🎤 Procesando ".count($speakers)." speakers...");
 
-    $cols = 3; // 🔹 3 por fila
-    $rows = ceil(count($speakers) / $cols);
-    $photoW = intval($W / 3.5);
-    $photoH = intval($photoW);
-    $startY = intval($H * 0.40);
-    $index = 0;
-    $fontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+        $cols = 3;
+        $rows = ceil(count($speakers) / $cols);
+        $photoW = intval($W / 3.5);
+        $photoH = intval($photoW);
+        $textHeight = 140; // Espacio para nombre y cargo
+        $rowTotalHeight = $photoH + $textHeight;
+        
+        // Calcular espacios disponibles
+        $availableHeight = $speakersAreaEnd - $speakersAreaStart;
+        $totalSpeakersHeight = $rows * $rowTotalHeight;
+        $startY = $speakersAreaStart + intval(($availableHeight - $totalSpeakersHeight) / 2);
+        
+        $index = 0;
+        $fontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
-    if (!file_exists($fontPath)) {
-        error_log("⚠️ Fuente no encontrada: $fontPath");
-        $fontPath = null;
-    }
-
-    for ($r = 0; $r < $rows; $r++) {
-        $y = $startY + $r * ($photoH + 180);
-        $numInRow = min($cols, count($speakers) - $index);
-        $rowW = $numInRow * $photoW + ($numInRow - 1) * 60;
-        $x = ($W - $rowW) / 2;
-
-        for ($c = 0; $c < $numInRow; $c++) {
-            $sp = $speakers[$index++] ?? null;
-            if (!$sp) continue;
-
-            $photoUrl = $sp['photo'] ?? null;
-            $name = trim($sp['name'] ?? '');
-            $role = trim($sp['role'] ?? '');
-
-            error_log("👤 Speaker #$index: $name ($photoUrl)");
-
-            $photo = $download_image($photoUrl);
-            $photo = safe_thumbnail($photo, $photoW, $photoH, $photoUrl, 'speaker');
-            if (!$photo) {
-                error_log("❌ No se pudo cargar la foto de $name");
-                continue;
-            }
-
-            // 🖼️ Colocar foto
-            $img->compositeImage($photo, Imagick::COMPOSITE_OVER, intval($x), intval($y));
-
-            // ✍️ Añadir texto debajo
-            try {
-                $draw = new ImagickDraw();
-                if ($fontPath) $draw->setFont($fontPath);
-                $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-                $draw->setFillColor('#000000');
-                $draw->setFontSize(36);
-                $draw->setFontWeight(700);
-
-                $textY = $y + $photoH + 50;
-                $centerX = $x + ($photoW / 2);
-
-                if ($name) {
-                    $img->annotateImage($draw, $centerX, $textY, 0, $name);
-                }
-
-                if ($role) {
-                    $drawRole = new ImagickDraw();
-                    if ($fontPath) $drawRole->setFont($fontPath);
-                    $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
-                    $drawRole->setFillColor('#444444');
-                    $drawRole->setFontSize(26);
-                    $drawRole->setFontWeight(500);
-                    $img->annotateImage($drawRole, $centerX, $textY + 40, 0, $role);
-                }
-
-                error_log("✅ Texto añadido para $name");
-
-            } catch (Exception $e) {
-                error_log("💥 Error añadiendo texto de $name: ".$e->getMessage());
-            }
-
-            $x += $photoW + 60;
+        if (!file_exists($fontPath)) {
+            error_log("⚠️ Fuente no encontrada: $fontPath");
+            $fontPath = null;
         }
-    }
-}
 
-    // 💼 Logos
+        for ($r = 0; $r < $rows; $r++) {
+            $y = $startY + $r * $rowTotalHeight;
+            $numInRow = min($cols, count($speakers) - $index);
+            $rowW = $numInRow * $photoW + ($numInRow - 1) * 60;
+            $x = ($W - $rowW) / 2;
+
+            for ($c = 0; $c < $numInRow; $c++) {
+                $sp = $speakers[$index++] ?? null;
+                if (!$sp) continue;
+
+                $photoUrl = $sp['photo'] ?? null;
+                $name = trim($sp['name'] ?? '');
+                $role = trim($sp['role'] ?? '');
+
+                error_log("👤 Speaker #$index: $name ($photoUrl)");
+
+                $photo = $download_image($photoUrl);
+                $photo = safe_thumbnail($photo, $photoW, $photoH, $photoUrl, 'speaker');
+                if (!$photo) {
+                    error_log("❌ No se pudo cargar la foto de $name");
+                    continue;
+                }
+
+                // 🖼️ Colocar foto
+                $img->compositeImage($photo, Imagick::COMPOSITE_OVER, intval($x), intval($y));
+
+                // ✍️ Añadir texto debajo
+                try {
+                    $draw = new ImagickDraw();
+                    if ($fontPath) $draw->setFont($fontPath);
+                    $draw->setTextAlignment(Imagick::ALIGN_CENTER);
+                    $draw->setFillColor('#000000');
+                    $draw->setFontSize(36);
+                    $draw->setFontWeight(700);
+
+                    $textY = $y + $photoH + 50;
+                    $centerX = $x + ($photoW / 2);
+
+                    if ($name) {
+                        $img->annotateImage($draw, $centerX, $textY, 0, $name);
+                    }
+
+                    if ($role) {
+                        $drawRole = new ImagickDraw();
+                        if ($fontPath) $drawRole->setFont($fontPath);
+                        $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
+                        $drawRole->setFillColor('#444444');
+                        $drawRole->setFontSize(26);
+                        $drawRole->setFontWeight(500);
+                        $img->annotateImage($drawRole, $centerX, $textY + 40, 0, $role);
+                    }
+
+                    error_log("✅ Texto añadido para $name");
+
+                } catch (Exception $e) {
+                    error_log("💥 Error añadiendo texto de $name: ".$e->getMessage());
+                }
+
+                $x += $photoW + 60;
+            }
+        }
+
+        error_log("🎤 Speakers ocupan desde Y=$startY hasta Y=".($startY + $totalSpeakersHeight));
+    }
+
+    // 💼 Logos (en zona dedicada)
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
-        $logoY = $H - 500;
+        $logosHeight = $logosAreaEnd - $logosAreaStart;
+        $logoMaxH = intval($logosHeight * 0.70);
+        $logoY = $logosAreaStart + intval(($logosHeight - $logoMaxH) / 2);
         $maxW = min(220, intval(($W - (count($logos) - 1) * 30) / count($logos)));
         $totalW = count($logos) * $maxW + (count($logos) - 1) * 30;
         $x = ($W - $totalW) / 2;
+        
+        error_log("💼 Logos en zona Y=$logosAreaStart-$logosAreaEnd, posición Y=$logoY");
+        
         foreach ($logos as $logo) {
             $m = $download_image($logo['photo']);
-            $m = safe_thumbnail($m, $maxW, 100, $logo['photo'], 'logo');
+            $m = safe_thumbnail($m, $maxW, $logoMaxH, $logo['photo'], 'logo');
             if (!$m) continue;
             $img->compositeImage($m, Imagick::COMPOSITE_OVER, intval($x), intval($logoY));
             $x += $maxW + 30;
         }
     }
 
-    // 🤝 Sponsors
+    // 🤝 Sponsors (en zona dedicada)
     $sponsors = $payload['sponsors'] ?? [];
     if (!empty($sponsors)) {
-        $sponsorY = $H - 300;
+        $sponsorsHeight = $H - $sponsorsAreaStart;
+        $sponsorMaxH = intval($sponsorsHeight * 0.70);
+        $sponsorY = $sponsorsAreaStart + intval(($sponsorsHeight - $sponsorMaxH) / 2);
         $maxW = min(300, intval(($W - (count($sponsors) - 1) * 50) / count($sponsors)));
         $totalW = count($sponsors) * $maxW + (count($sponsors) - 1) * 50;
         $x = ($W - $totalW) / 2;
+        
+        error_log("🤝 Sponsors en zona Y=$sponsorsAreaStart-$H, posición Y=$sponsorY");
+        
         foreach ($sponsors as $sp) {
             $m = $download_image($sp['photo']);
-            $m = safe_thumbnail($m, $maxW, 120, $sp['photo'], 'sponsor');
+            $m = safe_thumbnail($m, $maxW, $sponsorMaxH, $sp['photo'], 'sponsor');
             if (!$m) continue;
             $img->compositeImage($m, Imagick::COMPOSITE_OVER, intval($x), intval($sponsorY));
             $x += $maxW + 50;
