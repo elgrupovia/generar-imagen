@@ -187,35 +187,72 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("📝 Título agregado debajo del banner: ".$payload['event_title']);
     }
 
-    // 👤 Speakers (2 filas de 3)
-    $speakers = $payload['speakers'] ?? [];
-    $cols = 3;
-    $rows = ceil(count($speakers) / 3);
-    $photoW = 380;
-    $photoH = 380;
-    $startY = intval($H * 0.4);
-    $index = 0;
+    // 👤 Speakers (2 filas de 4 con texto debajo visible)
+$speakers = $payload['speakers'] ?? [];
+$cols = 4; // 4 por fila (1/4 del ancho)
+$rows = ceil(count($speakers) / $cols);
+$photoW = intval($W / 4.5);
+$photoH = intval($photoW);
+$startY = intval($H * 0.40);
+$index = 0;
 
-    for ($r = 0; $r < $rows; $r++) {
-        $y = $startY + $r * ($photoH + $gutter);
-        $numInRow = min($cols, count($speakers) - $index);
-        $rowW = $numInRow * $photoW + ($numInRow - 1) * $gutter;
-        $x = ($W - $rowW) / 2;
-        for ($c = 0; $c < $numInRow; $c++) {
-            $sp = $speakers[$index++] ?? null;
-            if (!$sp) continue;
-            $photo = $download_image($sp['photo']);
-            $photo = safe_thumbnail($photo, $photoW, $photoH, $sp['photo'], 'speaker');
-            if (!$photo) continue;
-            $cell = new Imagick();
-            $cell->newImage($photoW, $photoH, new ImagickPixel('#ffffff'));
-            $offX = intval(($photoW - $photo->getImageWidth()) / 2);
-            $offY = intval(($photoH - $photo->getImageHeight()) / 2);
-            $cell->compositeImage($photo, Imagick::COMPOSITE_OVER, $offX, $offY);
-            $img->compositeImage($cell, Imagick::COMPOSITE_OVER, $x, $y);
-            $x += $photoW + $gutter;
+$fontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'; // fuente segura
+
+for ($r = 0; $r < $rows; $r++) {
+    $y = $startY + $r * ($photoH + 160); // espacio extra para texto
+    $numInRow = min($cols, count($speakers) - $index);
+    $rowW = $numInRow * $photoW + ($numInRow - 1) * 30;
+    $x = ($W - $rowW) / 2;
+
+    for ($c = 0; $c < $numInRow; $c++) {
+        $sp = $speakers[$index++] ?? null;
+        if (!$sp) continue;
+
+        // 📸 Imagen del speaker
+        $photo = $download_image($sp['photo']);
+        $photo = safe_thumbnail($photo, $photoW, $photoH, $sp['photo'], 'speaker');
+        if (!$photo) continue;
+
+        // 🖼️ Colocar foto
+        $img->compositeImage($photo, Imagick::COMPOSITE_OVER, intval($x), intval($y));
+
+        // ✍️ Nombre
+        $name = trim($sp['name'] ?? '');
+        $role = trim($sp['role'] ?? '');
+
+        if ($name || $role) {
+            $draw = new ImagickDraw();
+            $draw->setFont($fontPath);
+            $draw->setTextAlignment(Imagick::ALIGN_CENTER);
+            $draw->setFillColor('#000000');
+            $draw->setFontSize(30);
+            $draw->setFontWeight(700);
+
+            // Sombra blanca para legibilidad
+            $shadow = clone $draw;
+            $shadow->setFillColor('#FFFFFF');
+
+            // 🧾 Nombre
+            $textY = $y + $photoH + 40;
+            $img->annotateImage($shadow, $x + ($photoW / 2) + 2, $textY + 2, 0, $name);
+            $img->annotateImage($draw, $x + ($photoW / 2), $textY, 0, $name);
+
+            // 🧾 Cargo
+            if ($role) {
+                $drawRole = new ImagickDraw();
+                $drawRole->setFont($fontPath);
+                $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
+                $drawRole->setFillColor('#333333');
+                $drawRole->setFontSize(22);
+                $drawRole->setFontWeight(500);
+                $img->annotateImage($drawRole, $x + ($photoW / 2), $textY + 40, 0, $role);
+            }
         }
+
+        $x += $photoW + 30;
     }
+}
+
 
     // 💼 Logos
     $logos = $payload['logos'] ?? [];
