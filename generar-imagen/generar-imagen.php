@@ -26,7 +26,17 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
     try {
         if ($imagick && $imagick->getImageWidth() > 0 && $imagick->getImageHeight() > 0) {
             if ($w > 0 && $h > 0) {
-                $imagick->thumbnailImage($w, $h, true);
+                // Usar scaleImage + crop para asegurar que cubre y tiene el tamaño exacto (cover)
+                $scaleRatio = max($w / $imagick->getImageWidth(), $h / $imagick->getImageHeight());
+                $newW = (int)($imagick->getImageWidth() * $scaleRatio);
+                $newH = (int)($imagick->getImageHeight() * $scaleRatio);
+
+                $imagick->scaleImage($newW, $newH);
+
+                $x_offset = (int)(($newW - $w) / 2);
+                $y_offset = (int)(($newH - $h) / 2);
+                $imagick->cropImage($w, $h, $x_offset, $y_offset);
+                $imagick->setImagePage($w, $h, 0, 0); // Ajustar el lienzo
             } elseif ($w > 0) {
                 $imagick->thumbnailImage($w, 0, true);
             } elseif ($h > 0) {
@@ -222,7 +232,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $img->annotateImage($draw, $W / 2, $eventInfoStart + 40, 0, $eventDetails);
     error_log("📅 Detalles: $eventDetails");
 
-    // 👤 Speakers con recuadros redondeados (Ajuste para nombre/cargo dentro y fondo blanco)
+    // 👤 Speakers con recuadros redondeados (Ajuste para alineación)
     $speakers = $payload['speakers'] ?? [];
     if (!empty($speakers)) {
         error_log("🎤 Procesando ".count($speakers)." speakers");
@@ -259,7 +269,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $role = trim($sp['role'] ?? '');
 
                 $photoBase = $download_image($photoUrl);
-                // Redimensionar la imagen del speaker para que ocupe la parte superior
+                
+                // *** MODIFICACIÓN CLAVE: Usamos safe_thumbnail con ancho y alto fijos para forzar la cobertura exacta ***
                 $photoBase = safe_thumbnail($photoBase, $photoW, $photoImageHeight, $photoUrl, 'speaker');
                 if (!$photoBase) continue;
 
@@ -273,6 +284,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                 // Crear el fondo blanco para el nombre y cargo
                 $whiteBg = new Imagick();
+                // El fondo blanco DEBE tener el ancho exacto $photoW
                 $whiteBg->newImage($photoW, $textHeightInternal, new ImagickPixel('#FFFFFF'));
                 $whiteBg->setImageFormat('png');
                 $speakerCanvas->compositeImage($whiteBg, Imagick::COMPOSITE_OVER, 0, $photoImageHeight); // Posicionar debajo de la foto
