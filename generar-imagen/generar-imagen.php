@@ -176,10 +176,16 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $eventInfoStart = $headerEnd;
     $eventInfoEnd = intval($H * 0.22);
     $speakersStart = $eventInfoEnd;
-    $speakersEnd = intval($H * 0.70); 
-    $logosStart = $speakersEnd + 30;
-    $logosEnd = intval($H * 0.83); 
-    $sponsorsStart = $logosEnd;
+    $speakersEnd = intval($H * 0.65); // Ajustamos el final de los speakers para dejar más espacio abajo
+    
+    // Nueva zona para Ponentes (Rectángulo con título arriba)
+    $sectionPonentesStart = $speakersEnd + 20; // Un pequeño gap después de los speakers
+    $sectionPonentesEnd = intval($H * 0.78); // Fin de la zona para ponentes
+    
+    // Nueva zona para Patrocinadores (Rectángulo con título arriba y fotos)
+    $sectionPatrocinadoresStart = $sectionPonentesEnd + 20; // Gap después de ponentes
+    $sectionPatrocinadoresEnd = $H - 20; // Casi hasta el final del lienzo (con un pequeño margen)
+
 
     // 🟢 Banner verde centrado con borde redondeado
     $bannerBoxW = intval($W * 0.65);
@@ -374,44 +380,55 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("🎤 Grid: $rows filas x $cols columnas");
     }
 
-    // 🏷️ Logos de Ponentes (Posición ajustada con rectángulo horizontal)
+    // 🏷️ Sección de Ponentes (Rectángulo blanco redondeado con título arriba)
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
-        // Altura y margen interno del recuadro blanco de logos
-        $logosBoxHeight = intval($H * 0.10); // Altura fija para el recuadro de logos
-        $logosBoxY = $logosStart + intval(($logosEnd - $logosStart - $logosBoxHeight) / 2) + 20; // Centrar verticalmente en su zona
-        $logosBoxPaddingX = 40; // Relleno lateral dentro del recuadro
+        $sectionPonentesW = $W - 80; // Ancho del recuadro (con 40px de margen a cada lado)
+        $sectionPonentesH = $sectionPonentesEnd - $sectionPonentesStart;
+        $sectionPonentesX = ($W - $sectionPonentesW) / 2;
+        $sectionPonentesY = $sectionPonentesStart;
 
-        // Crear el recuadro blanco para los logos
-        $logosBackground = new Imagick();
-        $logosBackground->newImage($W - ($logosBoxPaddingX * 2), $logosBoxHeight, new ImagickPixel('#FFFFFF'));
-        $logosBackground->setImageFormat('png');
+        // Crear el lienzo para la sección de ponentes
+        $ponPonentessCanvas = new Imagick();
+        $ponPonentessCanvas->newImage($sectionPonentesW, $sectionPonentesH, new ImagickPixel('#FFFFFF'));
+        $ponPonentessCanvas->setImageFormat('png');
 
-        // Dibujar el título "Ponentes:" dentro del recuadro blanco
+        // Redondear las esquinas del recuadro de ponentes
+        $cornerRadius = 30; 
+        $ponPonentessCanvas = gi_round_corners($ponPonentessCanvas, $cornerRadius);
+        if (!$ponPonentessCanvas) {
+            error_log("❌ No se pudo redondear el canvas de ponentes.");
+            return new WP_REST_Response(['error'=>'Failed to round corners for ponentes section'], 500);
+        }
+
+        // Título "Ponentes:"
         $draw = new ImagickDraw();
         if (file_exists($fontPath)) $draw->setFont($fontPath);
-        $draw->setFillColor('#000000'); // Texto negro sobre fondo blanco
+        $draw->setFillColor('#000000');
         $draw->setFontSize(30);
         $draw->setFontWeight(800);
-        $draw->setTextAlignment(Imagick::ALIGN_LEFT);
+        $draw->setTextAlignment(Imagick::ALIGN_CENTER);
         
-        // Posicionar "Ponentes:" dentro del recuadro blanco
-        $logosBackground->annotateImage($draw, 20, intval($logosBoxHeight / 2) + 10, 0, 'Ponentes:'); // Pequeño padding interno
+        // Posicionar el título "Ponentes:" centrado en la parte superior del recuadro
+        $titlePonentesY = 40; // Desde el top del canvas de ponentes
+        $ponPonentessCanvas->annotateImage($draw, $sectionPonentesW / 2, $titlePonentesY, 0, 'Ponentes:');
 
-        // Calcular la zona de los logos dentro del recuadro blanco
-        $logosAreaX = 220; // Espacio para el texto "Ponentes:"
-        $logosAreaW = $logosBackground->getImageWidth() - $logosAreaX - 20; // Ancho restante para los logos
-        $logoMaxH = intval($logosBoxHeight * 0.70); // Máx altura para los logos dentro del recuadro
-        $logoYInsideBox = intval(($logosBoxHeight - $logoMaxH) / 2); // Centrar verticalmente dentro del recuadro
-
+        // Calcular la zona de los logos dentro del recuadro
+        $logosAreaTop = $titlePonentesY + 30; // Debajo del título
+        $logosAreaHeight = $sectionPonentesH - $logosAreaTop - 20; // Altura restante para logos, con un margen inferior
+        $logoMaxH = intval($logosAreaHeight * 0.80); // Máx altura para los logos dentro del recuadro
+        
         $totalLogosInRow = count($logos);
-        $gapBetweenLogos = 40; // Espacio entre logos
-        $calculatedMaxW = ($logosAreaW - ($totalLogosInRow - 1) * $gapBetweenLogos) / $totalLogosInRow;
-        $maxW = min(180, (int)$calculatedMaxW); // Ancho máximo individual para cada logo
+        $gapBetweenLogos = 40; 
+        $horizontalPadding = 60; // Padding horizontal dentro del recuadro para los logos
+
+        $availableLogosWidth = $sectionPonentesW - ($horizontalPadding * 2);
+        $calculatedMaxW = ($availableLogosWidth - ($totalLogosInRow - 1) * $gapBetweenLogos) / $totalLogosInRow;
+        $maxW = min(180, (int)$calculatedMaxW); 
 
         // Calcular el ancho total que ocuparán los logos para centrarlos
         $actualLogosWidth = $totalLogosInRow * $maxW + ($totalLogosInRow - 1) * $gapBetweenLogos;
-        $startLogoXInsideBox = $logosAreaX + intval(($logosAreaW - $actualLogosWidth) / 2);
+        $startLogoXInsideBox = $horizontalPadding + intval(($availableLogosWidth - $actualLogosWidth) / 2);
 
         $currentX = $startLogoXInsideBox;
 
@@ -420,50 +437,128 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $m = safe_thumbnail($m, $maxW, $logoMaxH, $logo['photo'], 'logo');
             if (!$m) continue;
             
-            // Componer el logo en la imagen de fondo blanca
-            $logosBackground->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoYInsideBox));
+            // Componer el logo en el canvas de la sección de ponentes
+            $ponPonentessCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logosAreaTop + ($logosAreaHeight - $m->getImageHeight()) / 2));
             $currentX += $maxW + $gapBetweenLogos;
         }
 
-        // Componer el recuadro blanco completo (con texto y logos) en la imagen principal
-        $img->compositeImage($logosBackground, Imagick::COMPOSITE_OVER, $logosBoxPaddingX, $logosBoxY);
-        error_log("💼 ".count($logos)." logos ponentes en recuadro horizontal");
+        // Sombra suave para el recuadro de ponentes
+        try {
+            $shadow = new Imagick();
+            $shadow->readImageBlob($ponPonentessCanvas->getImageBlob());
+            $shadow->shadowImage(80, 3, 0, 0);
+            $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($sectionPonentesX) - 3, intval($sectionPonentesY) + 3);
+        } catch (Exception $e) {
+            error_log("⚠️ Sombra no aplicada al recuadro de ponentes: ".$e->getMessage());
+        }
+
+        // Componer el recuadro de ponentes completo en la imagen principal
+        $img->compositeImage($ponPonentessCanvas, Imagick::COMPOSITE_OVER, $sectionPonentesX, $sectionPonentesY);
+        error_log("💼 ".count($logos)." logos ponentes en recuadro redondeado con título encima.");
     }
 
-    // 🤝 Patrocinadores con fondo blanco (Posición ajustada)
+    // 🤝 Sección de Patrocinadores (Rectángulo blanco redondeado con título, logos y 2 fotos)
     $sponsors = $payload['sponsors'] ?? [];
-    if (!empty($sponsors)) {
-        // Fondo blanco para sponsors
-        $sponsorBg = new Imagick();
-        $sponsorBg->newImage($W, $H - $sponsorsStart, new ImagickPixel('#FFFFFF'));
-        $img->compositeImage($sponsorBg, Imagick::COMPOSITE_OVER, 0, $sponsorsStart);
+    $closingImages = $payload['closing_images'] ?? []; // Asumo que estas son las 2 fotos
+    
+    if (!empty($sponsors) || !empty($closingImages)) {
+        $sectionPatrocinadoresW = $W - 80; 
+        $sectionPatrocinadoresH = $sectionPatrocinadoresEnd - $sectionPatrocinadoresStart;
+        $sectionPatrocinadoresX = ($W - $sectionPatrocinadoresW) / 2;
+        $sectionPatrocinadoresY = $sectionPatrocinadoresStart;
 
-        // Título
+        $patrocinadoresCanvas = new Imagick();
+        $patrocinadoresCanvas->newImage($sectionPatrocinadoresW, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF'));
+        $patrocinadoresCanvas->setImageFormat('png');
+
+        // Redondear las esquinas del recuadro de patrocinadores
+        $cornerRadius = 30; 
+        $patrocinadoresCanvas = gi_round_corners($patrocinadoresCanvas, $cornerRadius);
+        if (!$patrocinadoresCanvas) {
+            error_log("❌ No se pudo redondear el canvas de patrocinadores.");
+            return new WP_REST_Response(['error'=>'Failed to round corners for patrocinadores section'], 500);
+        }
+
+        $currentContentY = 40; // Empieza el contenido dentro del canvas de patrocinadores
+
+        // Título "Patrocina:"
         $draw = new ImagickDraw();
         if (file_exists($fontPath)) $draw->setFont($fontPath);
         $draw->setFillColor('#000000');
         $draw->setFontSize(30);
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-        $img->annotateImage($draw, $W / 2, $sponsorsStart + 42, 0, 'Patrocina:');
+        $patrocinadoresCanvas->annotateImage($draw, $sectionPatrocinadoresW / 2, $currentContentY, 0, 'Patrocina:');
+        $currentContentY += 60; // Espacio después del título
 
-        // Logos sponsors
-        $sponsorHeight = $H - $sponsorsStart - 60;
-        $sponsorMaxH = intval($sponsorHeight * 0.75);
-        $sponsorY = $sponsorsStart + 60 + intval(($sponsorHeight - $sponsorMaxH) / 2);
-        
-        $maxW = min(300, intval(($W - (count($sponsors) - 1) * 60) / count($sponsors)));
-        $totalW = count($sponsors) * $maxW + (count($sponsors) - 1) * 60;
-        $x = ($W - $totalW) / 2;
+        // Logos de Patrocinadores
+        if (!empty($sponsors)) {
+            $logosAreaHeight = ($sectionPatrocinadoresH / 2) - ($currentContentY - 40); // La mitad del espacio restante para logos
+            $logoMaxH = intval($logosAreaHeight * 0.70); 
+            
+            $totalSponsorsInRow = count($sponsors);
+            $gapBetweenSponsors = 60;
+            $horizontalPadding = 60; 
 
-        foreach ($sponsors as $sp) {
-            $m = $download_image($sp['photo']);
-            $m = safe_thumbnail($m, $maxW, $sponsorMaxH, $sp['photo'], 'sponsor');
-            if (!$m) continue;
-            $img->compositeImage($m, Imagick::COMPOSITE_OVER, intval($x), intval($sponsorY));
-            $x += $maxW + 60;
+            $availableSponsorsWidth = $sectionPatrocinadoresW - ($horizontalPadding * 2);
+            $calculatedMaxW = ($availableSponsorsWidth - ($totalSponsorsInRow - 1) * $gapBetweenSponsors) / $totalSponsorsInRow;
+            $maxW = min(300, (int)$calculatedMaxW); 
+
+            $actualSponsorsWidth = $totalSponsorsInRow * $maxW + ($totalSponsorsInRow - 1) * $gapBetweenSponsors;
+            $startSponsorXInsideBox = $horizontalPadding + intval(($availableSponsorsWidth - $actualSponsorsWidth) / 2);
+
+            $currentX = $startSponsorXInsideBox;
+
+            foreach ($sponsors as $sp) {
+                $m = $download_image($sp['photo']);
+                $m = safe_thumbnail($m, $maxW, $logoMaxH, $sp['photo'], 'sponsor');
+                if (!$m) continue;
+                
+                $patrocinadoresCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($currentContentY + ($logosAreaHeight - $m->getImageHeight()) / 2 - 10)); // Ajuste -10
+                $currentX += $maxW + $gapBetweenSponsors;
+            }
+            $currentContentY += $logosAreaHeight + 20; // Espacio después de los logos
+            error_log("🤝 ".count($sponsors)." patrocinadores en recuadro.");
         }
-        error_log("🤝 ".count($sponsors)." patrocinadores");
+
+        // Las 2 Fotos Finales
+        if (!empty($closingImages) && count($closingImages) >= 2) {
+            $imagesAreaHeight = $sectionPatrocinadoresH - $currentContentY - 20; // Espacio restante para las fotos
+            $imageMaxH = intval($imagesAreaHeight * 0.80);
+            
+            $imageW = intval($sectionPatrocinadoresW / 2 - 80); // Ancho para cada una de las 2 imágenes, con margen
+            $imageH = $imageMaxH;
+
+            $img1 = $download_image($closingImages[0]['photo'] ?? null);
+            $img2 = $download_image($closingImages[1]['photo'] ?? null);
+
+            $img1 = safe_thumbnail($img1, $imageW, $imageH, $closingImages[0]['photo'] ?? '', 'closing_image_1');
+            $img2 = safe_thumbnail($img2, $imageW, $imageH, $closingImages[1]['photo'] ?? '', 'closing_image_2');
+
+            $totalClosingImagesWidth = ($img1 ? $img1->getImageWidth() : 0) + ($img2 ? $img2->getImageWidth() : 0) + 60; // Ancho total de 2 imágenes + espacio
+            $startClosingImageX = intval(($sectionPatrocinadoresW - $totalClosingImagesWidth) / 2);
+
+            if ($img1) {
+                $patrocinadoresCanvas->compositeImage($img1, Imagick::COMPOSITE_OVER, $startClosingImageX, intval($currentContentY + ($imagesAreaHeight - $img1->getImageHeight()) / 2));
+            }
+            if ($img2) {
+                $patrocinadoresCanvas->compositeImage($img2, Imagick::COMPOSITE_OVER, $startClosingImageX + ($img1 ? $img1->getImageWidth() : 0) + 60, intval($currentContentY + ($imagesAreaHeight - $img2->getImageHeight()) / 2));
+            }
+            error_log("🖼️ 2 imágenes finales agregadas.");
+        }
+
+        // Sombra suave para el recuadro de patrocinadores
+        try {
+            $shadow = new Imagick();
+            $shadow->readImageBlob($patrocinadoresCanvas->getImageBlob());
+            $shadow->shadowImage(80, 3, 0, 0);
+            $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($sectionPatrocinadoresX) - 3, intval($sectionPatrocinadoresY) + 3);
+        } catch (Exception $e) {
+            error_log("⚠️ Sombra no aplicada al recuadro de patrocinadores: ".$e->getMessage());
+        }
+
+        // Componer el recuadro de patrocinadores completo en la imagen principal
+        $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, $sectionPatrocinadoresX, $sectionPatrocinadoresY);
     }
 
     // 📤 Exportar
