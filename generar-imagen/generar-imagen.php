@@ -182,9 +182,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $sectionPonentesStart = $speakersEnd + 20; // Un pequeño gap después de los speakers
     $sectionPonentesEnd = intval($H * 0.78); // Fin de la zona para ponentes
     
-    // Nueva zona para Patrocinadores (Rectángulo con título arriba y fotos)
+    // Nueva zona para Patrocinadores (Rectángulo con título arriba y fotos) - Altura reducida
     $sectionPatrocinadoresStart = $sectionPonentesEnd + 20; // Gap después de ponentes
-    $sectionPatrocinadoresEnd = $H - 20; // Casi hasta el final del lienzo (con un pequeño margen)
+    $sectionPatrocinadoresEnd = intval($H * 0.95); // AJUSTE CLAVE: Reducimos su final
 
 
     // 🟢 Banner verde centrado con borde redondeado
@@ -491,9 +491,13 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $patrocinadoresCanvas->annotateImage($draw, $sectionPatrocinadoresW / 2, $currentContentY, 0, 'Patrocina:');
         $currentContentY += 60; // Espacio después del título
 
+        // Calcular el espacio disponible para Logos y para Imágenes, de forma más equitativa
+        $remainingHeight = $sectionPatrocinadoresH - $currentContentY - 20; // Altura total disponible para ambos bloques
+        $blockHeight = intval($remainingHeight / 2); // Cada bloque (logos y fotos) ocupa la mitad
+
         // Logos de Patrocinadores
         if (!empty($sponsors)) {
-            $logosAreaHeight = ($sectionPatrocinadoresH / 2) - ($currentContentY - 40); // La mitad del espacio restante para logos
+            $logosAreaHeight = $blockHeight; // Altura fija para los logos
             $logoMaxH = intval($logosAreaHeight * 0.70); 
             
             $totalSponsorsInRow = count($sponsors);
@@ -514,19 +518,20 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $m = safe_thumbnail($m, $maxW, $logoMaxH, $sp['photo'], 'sponsor');
                 if (!$m) continue;
                 
-                $patrocinadoresCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($currentContentY + ($logosAreaHeight - $m->getImageHeight()) / 2 - 10)); // Ajuste -10
+                // Posicionar verticalmente centrado en el blockHeight
+                $patrocinadoresCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($currentContentY + ($logosAreaHeight - $m->getImageHeight()) / 2)); 
                 $currentX += $maxW + $gapBetweenSponsors;
             }
-            $currentContentY += $logosAreaHeight + 20; // Espacio después de los logos
             error_log("🤝 ".count($sponsors)." patrocinadores en recuadro.");
         }
+        $currentContentY += $blockHeight + 10; // Mover hacia abajo, con un pequeño gap
 
         // Las 2 Fotos Finales
         if (!empty($closingImages) && count($closingImages) >= 2) {
-            $imagesAreaHeight = $sectionPatrocinadoresH - $currentContentY - 20; // Espacio restante para las fotos
+            $imagesAreaHeight = $blockHeight; // Altura fija para las imágenes
             $imageMaxH = intval($imagesAreaHeight * 0.80);
             
-            $imageW = intval($sectionPatrocinadoresW / 2 - 80); // Ancho para cada una de las 2 imágenes, con margen
+            $imageW = intval($sectionPatrocinadoresW / 2 - 80); 
             $imageH = $imageMaxH;
 
             $img1 = $download_image($closingImages[0]['photo'] ?? null);
@@ -535,13 +540,15 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $img1 = safe_thumbnail($img1, $imageW, $imageH, $closingImages[0]['photo'] ?? '', 'closing_image_1');
             $img2 = safe_thumbnail($img2, $imageW, $imageH, $closingImages[1]['photo'] ?? '', 'closing_image_2');
 
-            $totalClosingImagesWidth = ($img1 ? $img1->getImageWidth() : 0) + ($img2 ? $img2->getImageWidth() : 0) + 60; // Ancho total de 2 imágenes + espacio
+            $totalClosingImagesWidth = ($img1 ? $img1->getImageWidth() : 0) + ($img2 ? $img2->getImageWidth() : 0) + 60; 
             $startClosingImageX = intval(($sectionPatrocinadoresW - $totalClosingImagesWidth) / 2);
 
             if ($img1) {
+                // Posicionar verticalmente centrado en el blockHeight
                 $patrocinadoresCanvas->compositeImage($img1, Imagick::COMPOSITE_OVER, $startClosingImageX, intval($currentContentY + ($imagesAreaHeight - $img1->getImageHeight()) / 2));
             }
             if ($img2) {
+                // Posicionar verticalmente centrado en el blockHeight
                 $patrocinadoresCanvas->compositeImage($img2, Imagick::COMPOSITE_OVER, $startClosingImageX + ($img1 ? $img1->getImageWidth() : 0) + 60, intval($currentContentY + ($imagesAreaHeight - $img2->getImageHeight()) / 2));
             }
             error_log("🖼️ 2 imágenes finales agregadas.");
