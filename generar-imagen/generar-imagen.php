@@ -241,10 +241,15 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 // Borde redondeado
                 $photo->borderImage(new ImagickPixel('white'), 6, 6);
                 
-                // Sombra suave
-                $shadow = $photo->clone();
-                $shadow->shadowImage(80, 3, 0, 0);
-                $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($x) - 3, intval($y) + 3);
+                // Sombra suave (usando clone moderno)
+                try {
+                    $shadow = new Imagick();
+                    $shadow->readImageBlob($photo->getImageBlob());
+                    $shadow->shadowImage(80, 3, 0, 0);
+                    $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($x) - 3, intval($y) + 3);
+                } catch (Exception $e) {
+                    error_log("⚠️ Sombra no aplicada: ".$e->getMessage());
+                }
                 
                 // Foto
                 $img->compositeImage($photo, Imagick::COMPOSITE_OVER, intval($x), intval($y));
