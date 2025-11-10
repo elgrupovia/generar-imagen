@@ -350,10 +350,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                     error_log("💥 Error texto en speaker canvas: ".$e->getMessage());
                 }
 
-                // *** NUEVO: Redondear esquinas del speakerCanvas completo ***
-                $cornerRadius = 30; // Ajusta este valor para un radio mayor o menor
+                // Redondear esquinas del speakerCanvas completo
+                $cornerRadius = 30; 
                 $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
-                if (!$speakerCanvas) continue; // Si la función falla, salta este speaker
+                if (!$speakerCanvas) continue; 
                  
                 // Sombra suave (aplicada al speakerCanvas completo)
                 try {
@@ -374,32 +374,60 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("🎤 Grid: $rows filas x $cols columnas");
     }
 
-    // 🏷️ Logos de Ponentes (Posición ajustada)
+    // 🏷️ Logos de Ponentes (Posición ajustada con rectángulo horizontal)
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
+        // Altura y margen interno del recuadro blanco de logos
+        $logosBoxHeight = intval($H * 0.10); // Altura fija para el recuadro de logos
+        $logosBoxY = $logosStart + intval(($logosEnd - $logosStart - $logosBoxHeight) / 2) + 20; // Centrar verticalmente en su zona
+        $logosBoxPaddingX = 40; // Relleno lateral dentro del recuadro
+
+        // Crear el recuadro blanco para los logos
+        $logosBackground = new Imagick();
+        $logosBackground->newImage($W - ($logosBoxPaddingX * 2), $logosBoxHeight, new ImagickPixel('#FFFFFF'));
+        $logosBackground->setImageFormat('png');
+
+        // Dibujar el título "Ponentes:" dentro del recuadro blanco
         $draw = new ImagickDraw();
         if (file_exists($fontPath)) $draw->setFont($fontPath);
-        $draw->setFillColor('#FFFFFF');
+        $draw->setFillColor('#000000'); // Texto negro sobre fondo blanco
         $draw->setFontSize(30);
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_LEFT);
-        $img->annotateImage($draw, 50, $logosStart + 42, 0, 'Ponentes:');
-
-        $logosHeight = $logosEnd - $logosStart - 15;
-        $logoMaxH = intval($logosHeight * 0.80);
-        $logoY = $logosStart + intval(($logosHeight - $logoMaxH) / 2) + 20; 
         
-        $maxW = min(180, intval(($W - 280 - (count($logos) - 1) * 20) / count($logos)));
-        $x = 280;
+        // Posicionar "Ponentes:" dentro del recuadro blanco
+        $logosBackground->annotateImage($draw, 20, intval($logosBoxHeight / 2) + 10, 0, 'Ponentes:'); // Pequeño padding interno
+
+        // Calcular la zona de los logos dentro del recuadro blanco
+        $logosAreaX = 220; // Espacio para el texto "Ponentes:"
+        $logosAreaW = $logosBackground->getImageWidth() - $logosAreaX - 20; // Ancho restante para los logos
+        $logoMaxH = intval($logosBoxHeight * 0.70); // Máx altura para los logos dentro del recuadro
+        $logoYInsideBox = intval(($logosBoxHeight - $logoMaxH) / 2); // Centrar verticalmente dentro del recuadro
+
+        $totalLogosInRow = count($logos);
+        $gapBetweenLogos = 40; // Espacio entre logos
+        $calculatedMaxW = ($logosAreaW - ($totalLogosInRow - 1) * $gapBetweenLogos) / $totalLogosInRow;
+        $maxW = min(180, (int)$calculatedMaxW); // Ancho máximo individual para cada logo
+
+        // Calcular el ancho total que ocuparán los logos para centrarlos
+        $actualLogosWidth = $totalLogosInRow * $maxW + ($totalLogosInRow - 1) * $gapBetweenLogos;
+        $startLogoXInsideBox = $logosAreaX + intval(($logosAreaW - $actualLogosWidth) / 2);
+
+        $currentX = $startLogoXInsideBox;
 
         foreach ($logos as $logo) {
             $m = $download_image($logo['photo']);
             $m = safe_thumbnail($m, $maxW, $logoMaxH, $logo['photo'], 'logo');
             if (!$m) continue;
-            $img->compositeImage($m, Imagick::COMPOSITE_OVER, intval($x), intval($logoY));
-            $x += $maxW + 20;
+            
+            // Componer el logo en la imagen de fondo blanca
+            $logosBackground->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoYInsideBox));
+            $currentX += $maxW + $gapBetweenLogos;
         }
-        error_log("💼 ".count($logos)." logos ponentes");
+
+        // Componer el recuadro blanco completo (con texto y logos) en la imagen principal
+        $img->compositeImage($logosBackground, Imagick::COMPOSITE_OVER, $logosBoxPaddingX, $logosBoxY);
+        error_log("💼 ".count($logos)." logos ponentes en recuadro horizontal");
     }
 
     // 🤝 Patrocinadores con fondo blanco (Posición ajustada)
