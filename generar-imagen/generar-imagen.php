@@ -222,7 +222,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $img->annotateImage($draw, $W / 2, $eventInfoStart + 40, 0, $eventDetails);
     error_log("📅 Detalles: $eventDetails");
 
-    // 👤 Speakers con recuadros redondeados
+    // 👤 Speakers con recuadros redondeados (Ajuste para nombre/cargo dentro y fondo blanco)
     $speakers = $payload['speakers'] ?? [];
     if (!empty($speakers)) {
         error_log("🎤 Procesando ".count($speakers)." speakers");
@@ -231,20 +231,21 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $cols = 3;
         $rows = ceil($totalSpeakers / $cols);
         
-        // Ajustes para hacer los speakers más pequeños
+        // Ajustes para hacer los speakers más pequeños y el texto dentro
         $photoW = intval($W / 4.5); 
-        $photoH = intval($photoW);
+        $photoH = intval($photoW * 1.2); // Altura total del recuadro del speaker (foto + texto)
         $gapX = 50; 
         $gapY = 60; 
-        $textHeight = 90;
+        $textHeightInternal = intval($photoH * 0.3); // Altura para el fondo blanco con texto
+        $photoImageHeight = $photoH - $textHeightInternal; // Altura real de la imagen de la persona
 
         $availableHeight = $speakersEnd - $speakersStart;
-        $totalHeight = $rows * ($photoH + $textHeight) + ($rows - 1) * $gapY;
+        $totalHeight = $rows * $photoH + ($rows - 1) * $gapY;
         $startY = $speakersStart + intval(($availableHeight - $totalHeight) / 2);
 
         $index = 0;
         for ($r = 0; $r < $rows; $r++) {
-            $y = $startY + $r * ($photoH + $textHeight + $gapY);
+            $y = $startY + $r * ($photoH + $gapY); // y usa la altura total del recuadro
             $numInRow = min($cols, $totalSpeakers - $index);
             $rowW = $numInRow * $photoW + ($numInRow - 1) * $gapX;
             $x = ($W - $rowW) / 2;
@@ -257,53 +258,67 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $name = trim($sp['name'] ?? '');
                 $role = trim($sp['role'] ?? '');
 
-                $photo = $download_image($photoUrl);
-                $photo = safe_thumbnail($photo, $photoW, $photoH, $photoUrl, 'speaker');
-                if (!$photo) continue;
+                $photoBase = $download_image($photoUrl);
+                // Redimensionar la imagen del speaker para que ocupe la parte superior
+                $photoBase = safe_thumbnail($photoBase, $photoW, $photoImageHeight, $photoUrl, 'speaker');
+                if (!$photoBase) continue;
 
-                // ELIMINADO: Borde blanco ($photo->borderImage...)
-                
-                // Sombra suave
-                try {
-                    $shadow = new Imagick();
-                    $shadow->readImageBlob($photo->getImageBlob());
-                    $shadow->shadowImage(80, 3, 0, 0);
-                    $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($x) - 3, intval($y) + 3);
-                } catch (Exception $e) {
-                    error_log("⚠️ Sombra no aplicada: ".$e->getMessage());
-                }
-                
-                // Foto
-                $img->compositeImage($photo, Imagick::COMPOSITE_OVER, intval($x), intval($y));
+                // Crear un nuevo lienzo para el speaker con el tamaño total ($photoW, $photoH)
+                $speakerCanvas = new Imagick();
+                $speakerCanvas->newImage($photoW, $photoH, new ImagickPixel('transparent'));
+                $speakerCanvas->setImageFormat('png');
 
-                // Texto bajo foto
+                // Componer la imagen del speaker en la parte superior del canvas del speaker
+                $speakerCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, 0, 0);
+
+                // Crear el fondo blanco para el nombre y cargo
+                $whiteBg = new Imagick();
+                $whiteBg->newImage($photoW, $textHeightInternal, new ImagickPixel('#FFFFFF'));
+                $whiteBg->setImageFormat('png');
+                $speakerCanvas->compositeImage($whiteBg, Imagick::COMPOSITE_OVER, 0, $photoImageHeight); // Posicionar debajo de la foto
+
+                // Dibujar texto (nombre y cargo) encima del fondo blanco
                 try {
                     $draw = new ImagickDraw();
                     if (file_exists($fontPath)) $draw->setFont($fontPath);
                     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-                    $draw->setFillColor('#FFFFFF');
-                    $draw->setFontSize(38);
+                    $draw->setFillColor('#000000'); // Texto oscuro sobre fondo blanco
+                    $draw->setFontSize(32); 
                     $draw->setFontWeight(900);
 
-                    $centerX = $x + ($photoW / 2);
-                    $nameY = $y + $photoH + 45;
+                    $centerX = $photoW / 2;
+                    // Ajuste vertical para centrar el texto en el fondo blanco
+                    $nameY = $photoImageHeight + intval($textHeightInternal / 2) - 15; 
 
                     if ($name) {
-                        $img->annotateImage($draw, $centerX, $nameY, 0, $name);
+                        $speakerCanvas->annotateImage($draw, $centerX, $nameY, 0, $name);
                     }
 
                     if ($role) {
                         $drawRole = new ImagickDraw();
                         if (file_exists($fontPath)) $drawRole->setFont($fontPath);
                         $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
-                        $drawRole->setFillColor('#cccccc');
-                        $drawRole->setFontSize(26);
+                        $drawRole->setFillColor('#555555'); 
+                        $drawRole->setFontSize(22); 
                         $drawRole->setFontWeight(600);
-                        $img->annotateImage($drawRole, $centerX, $nameY + 42, 0, $role);
+                        $speakerCanvas->annotateImage($drawRole, $centerX, $nameY + 30, 0, $role);
                     }
                 } catch (Exception $e) {
-                    error_log("💥 Error texto: ".$e->getMessage());
+                    error_log("💥 Error texto en speaker canvas: ".$e->getMessage());
                 }
+
+                // Sombra suave (aplicada al speakerCanvas completo)
+                try {
+                    $shadow = new Imagick();
+                    $shadow->readImageBlob($speakerCanvas->getImageBlob());
+                    $shadow->shadowImage(80, 3, 0, 0);
+                    $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($x) - 3, intval($y) + 3);
+                } catch (Exception $e) {
+                    error_log("⚠️ Sombra no aplicada: ".$e->getMessage());
+                }
+                
+                // Componer el speakerCanvas completo en la imagen principal
+                $img->compositeImage($speakerCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
 
                 $x += $photoW + $gapX;
             }
@@ -399,7 +414,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $filetype = wp_check_filetype($upload['file']);
     $attach_id = wp_insert_attachment([
         'post_mime_type'=>$filetype['type'],
-        'post_title'=>preg_replace('/\.[^.]+$/','',$filename),
+        'post_title'=>pathinfo($filename, PATHINFO_FILENAME), 
         'post_status'=>'inherit'
     ], $upload['file']);
     require_once ABSPATH.'wp-admin/includes/image.php';
