@@ -219,6 +219,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $totalHeight = $rows * ($photoH + $textHeight) + ($rows - 1) * $gapY;
         $startY = $speakersStart + intval(($availableHeight - $totalHeight) / 2);
 
+        
         $index = 0;
         for ($r = 0; $r < $rows; $r++) {
             $y = $startY + $r * ($photoH + $textHeight + $gapY);
