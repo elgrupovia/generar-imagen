@@ -120,23 +120,29 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $sponsorsStart = intval($H * 0.85);
 
     // 🟢 Caja verde encabezado con borde redondeado
-    $headerBox = new Imagick();
-    $headerBox->newImage(intval($W * 0.45), intval($headerEnd * 0.90), new ImagickPixel('#2ecc71'));
-    
-    // Aplicar borde redondeado usando ImagickDraw
-    $draw = new ImagickDraw();
-    $draw->setStrokeColor('#2ecc71');
-    $draw->setFillColor('none');
-    $draw->setStrokeWidth(0);
-    
-    // Redondear bordes con composite
-    $headerBox->setImageVirtualPixelMethod(Imagick::VIRTUALPIXELMETHOD_TRANSPARENT);
-    $headerBox->distortImage(Imagick::DISTORTION_BARREL, [0.0, 0.0, intval($W * 0.45), intval($headerEnd * 0.90)]);
-    
-    // Posicionar caja verde
     $headerBoxW = intval($W * 0.40);
     $headerBoxH = intval($headerEnd * 0.85);
-    $headerBox->scaleImage($headerBoxW, $headerBoxH);
+    
+    $headerBox = new Imagick();
+    $headerBox->newImage($headerBoxW, $headerBoxH, new ImagickPixel('#2ecc71'));
+    
+    // Aplicar esquinas redondeadas con ImagickDraw
+    $draw = new ImagickDraw();
+    $draw->setFillColor('#2ecc71');
+    $draw->setStrokeColor('#2ecc71');
+    $draw->setStrokeWidth(0);
+    $radius = 30;
+    $draw->roundRectangle(0, 0, $headerBoxW, $headerBoxH, $radius, $radius);
+    
+    // Crear imagen con esquinas redondeadas
+    $rounded = new Imagick();
+    $rounded->newImage($headerBoxW, $headerBoxH, new ImagickPixel('transparent'));
+    $rounded->drawImage($draw);
+    
+    // Combinar
+    $headerBox->newImage($headerBoxW, $headerBoxH, new ImagickPixel('#2ecc71'));
+    $headerBox->compositeImage($rounded, Imagick::COMPOSITE_IN, 0, 0);
+    
     $img->compositeImage($headerBox, Imagick::COMPOSITE_OVER, 50, 30);
     error_log("🟢 Caja encabezado verde agregada");
 
