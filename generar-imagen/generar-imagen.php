@@ -218,11 +218,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("🎤 Procesando ".count($speakers)." speakers");
 
         $totalSpeakers = count($speakers);
-        $photoW = intval($W / 3.2);
-        $photoH = intval($photoW * 1.15);
-        $gapX = 50;
-        $gapY = 80;
-        $textHeight = 120;
+        $photoW = intval($W / 3.3);
+        $photoH = intval($photoW);
+        $gapX = 60;
+        $gapY = 70;
+        $textHeight = 100;
 
         $availableHeight = $speakersEnd - $speakersStart;
         
