@@ -187,34 +187,34 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("📝 Título agregado debajo del banner: ".$payload['event_title']);
     }
 
-    // 👤 Speakers (2 filas de 4 con texto debajo y logs)
+    // 👤 Speakers (3 por fila con nombre y cargo debajo)
 $speakers = $payload['speakers'] ?? [];
 if (!empty($speakers)) {
     error_log("🎤 Procesando ".count($speakers)." speakers...");
 
-    $cols = 4; // 4 por fila
+    $cols = 3; // 🔹 3 por fila
     $rows = ceil(count($speakers) / $cols);
-    $photoW = intval($W / 4.5);
+    $photoW = intval($W / 3.5);
     $photoH = intval($photoW);
     $startY = intval($H * 0.40);
     $index = 0;
     $fontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
-    // Si la fuente no existe, WordPress lo registra
     if (!file_exists($fontPath)) {
         error_log("⚠️ Fuente no encontrada: $fontPath");
-        $fontPath = null; // evitamos crash
+        $fontPath = null;
     }
 
     for ($r = 0; $r < $rows; $r++) {
-        $y = $startY + $r * ($photoH + 160);
+        $y = $startY + $r * ($photoH + 180);
         $numInRow = min($cols, count($speakers) - $index);
-        $rowW = $numInRow * $photoW + ($numInRow - 1) * 30;
+        $rowW = $numInRow * $photoW + ($numInRow - 1) * 60;
         $x = ($W - $rowW) / 2;
 
         for ($c = 0; $c < $numInRow; $c++) {
             $sp = $speakers[$index++] ?? null;
             if (!$sp) continue;
+
             $photoUrl = $sp['photo'] ?? null;
             $name = trim($sp['name'] ?? '');
             $role = trim($sp['role'] ?? '');
@@ -237,29 +237,22 @@ if (!empty($speakers)) {
                 if ($fontPath) $draw->setFont($fontPath);
                 $draw->setTextAlignment(Imagick::ALIGN_CENTER);
                 $draw->setFillColor('#000000');
-                $draw->setFontSize(30);
+                $draw->setFontSize(36);
                 $draw->setFontWeight(700);
 
-                // Sombra blanca
-                $shadow = clone $draw;
-                $shadow->setFillColor('#FFFFFF');
-
-                $textY = $y + $photoH + 40;
+                $textY = $y + $photoH + 50;
                 $centerX = $x + ($photoW / 2);
 
-                // Nombre
                 if ($name) {
-                    $img->annotateImage($shadow, $centerX + 2, $textY + 2, 0, $name);
                     $img->annotateImage($draw, $centerX, $textY, 0, $name);
                 }
 
-                // Cargo
                 if ($role) {
                     $drawRole = new ImagickDraw();
                     if ($fontPath) $drawRole->setFont($fontPath);
                     $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
-                    $drawRole->setFillColor('#333333');
-                    $drawRole->setFontSize(22);
+                    $drawRole->setFillColor('#444444');
+                    $drawRole->setFontSize(26);
                     $drawRole->setFontWeight(500);
                     $img->annotateImage($drawRole, $centerX, $textY + 40, 0, $role);
                 }
@@ -270,13 +263,10 @@ if (!empty($speakers)) {
                 error_log("💥 Error añadiendo texto de $name: ".$e->getMessage());
             }
 
-            $x += $photoW + 30;
+            $x += $photoW + 60;
         }
     }
 }
-
-
-
 
     // 💼 Logos
     $logos = $payload['logos'] ?? [];
