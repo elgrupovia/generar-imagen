@@ -170,36 +170,35 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
-    // 📐 Zonas de diseño (REAJUSTADO para Altura de Patrocinadores = Altura de Ponentes, REDUCIDOS y BAJADOS)
+    // 📐 Zonas de diseño (REAJUSTADO para BAJAR TODO EL CONTENIDO Y ESTIRAR LA PARTE INFERIOR)
     $headerStart = 0;
-    $headerEnd = intval($H * 0.15);
+    $headerEnd = intval($H * 0.17); // <-- AJUSTE CLAVE: Subimos la cabecera (de 0.15 a 0.17)
     $eventInfoStart = $headerEnd;
-    $eventInfoEnd = intval($H * 0.22);
+    $eventInfoEnd = intval($H * 0.24); // También sube un poco (de 0.22 a 0.24)
     $speakersStart = $eventInfoEnd;
-    $speakersEnd = intval($H * 0.65); // Final de la zona de speakers (65% de la altura total)
+    $speakersEnd = intval($H * 0.70); // <-- AJUSTE CLAVE: Bajamos más el final de la zona de speakers (de 0.65 a 0.70)
     
-    // Altura del lienzo hasta donde terminará Patrocinadores (REDUCIDO de 0.95 a 0.88)
-    $finalAreaEnd = intval($H * 0.88); // <-- AJUSTE CLAVE: Reducimos la altura final del área de cajas
+    // Altura del lienzo hasta donde terminará Patrocinadores (Aumentado para reducir el margen inferior)
+    $finalAreaEnd = intval($H * 0.95); // <-- AJUSTE CLAVE: Estiramos el final del área de cajas (de 0.88 a 0.95)
     
     // Gaps (separación entre speakers/ponentes, ponentes/patrocinadores)
-    $gapSize = 40; // <-- AJUSTE CLAVE: Aumentamos el tamaño del gap
-    $totalGapsBetweenBoxes = $gapSize * 2; // Dos gaps entre los tres elementos (Speakers/Ponentes, Ponentes/Patrocinadores)
+    $gapSize = 40; 
+    $totalGapsBetweenBoxes = $gapSize * 2; 
 
     // Altura total disponible para los dos recuadros (Ponentes y Patrocinadores)
-    // El espacio empieza más abajo (debido al $gapSize aumentado) y termina más arriba ($finalAreaEnd reducido)
     $availableHeightForBoxes = $finalAreaEnd - $speakersEnd - $totalGapsBetweenBoxes;
     
     // Altura exacta que deben tener ambos rectángulos para que sean IDÉNTICOS
     $equalBoxHeight = intval($availableHeightForBoxes / 2); 
     
-    // --- DEFINICIÓN DE ZONAS CON ALTURA IGUALADA, MÁS PEQUEÑA Y MÁS ABAJO ---
+    // --- DEFINICIÓN DE ZONAS CON ALTURA IGUALADA, MÁS GRANDES Y MÁS ABAJO ---
     
     // 1. Zona Ponentes (Rectángulo con título arriba)
-    $sectionPonentesStart = $speakersEnd + $gapSize; // Empieza más abajo por el gap aumentado
+    $sectionPonentesStart = $speakersEnd + $gapSize; 
     $sectionPonentesEnd = $sectionPonentesStart + $equalBoxHeight; 
     
     // 2. Zona Patrocinadores (Rectángulo con título arriba y fotos)
-    $sectionPatrocinadoresStart = $sectionPonentesEnd + $gapSize; // También se desplaza más abajo
+    $sectionPatrocinadoresStart = $sectionPonentesEnd + $gapSize; 
     $sectionPatrocinadoresEnd = $sectionPatrocinadoresStart + $equalBoxHeight; 
     
     // Corrección por posibles errores de redondeo de 1px
@@ -208,7 +207,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPonentesEnd = $sectionPatrocinadoresStart - $gapSize;
         $equalBoxHeight = $sectionPonentesEnd - $sectionPonentesStart;
     }
-    // Fin del ajuste de zonas. Ambos recuadros tendrán la misma altura ($equalBoxHeight), serán más pequeños y estarán más abajo.
+    // Fin del ajuste de zonas. El contenido completo está más abajo y los recuadros inferiores ocupan más espacio vertical.
 
 
     // 🟢 Banner verde centrado con borde redondeado
@@ -231,7 +230,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     
     // Posicionar en el centro horizontalmente
     $bannerX = intval(($W - $bannerBoxW) / 2);
-    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20;
+    // Posición del banner (se desplaza hacia abajo por el nuevo $headerEnd)
+    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20; 
     $img->compositeImage($headerBox, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
     error_log("🟢 Banner verde centrado agregado");
 
