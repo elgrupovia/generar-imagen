@@ -237,7 +237,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
     }
 
-    // ✨ Logo superior derecho (Ajuste y depuración de carga con FALLBACK de texto)
+    // ✨ Logo superior derecho (Ajuste de posición y depuración de carga con FALLBACK de texto)
     $logoWidthTarget = intval($W * 0.14); // Ancho deseado para el logo
     $logoHeightTarget = intval($logoWidthTarget * 0.5); // Altura estimada para el logo o fallback
 
@@ -251,12 +251,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $headerLogo = safe_thumbnail($headerLogo, $logoWidthTarget, 0, $logoUrl, 'logo header'); // Altura 0 para mantener proporción
                 if ($headerLogo) {
                     $x = $W - $headerLogo->getImageWidth() - 40;
-                    $y = 30; 
+                    $y = 15; // ¡Ajuste para subir el logo!
                     $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
                     error_log("✨ Logo header agregado en esquina superior derecha con éxito.");
                 } else {
                      error_log("❌ FALLBACK: Error en redimensionado de logo descargado. Usando texto de fallback.");
-                     // Si el redimensionado falla (Imagick lo considera inválido tras descarga)
                      $headerLogo = null; 
                 }
             } else {
@@ -274,19 +273,18 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $fallbackLogoCanvas->setImageFormat('png');
 
         $drawFallback = new ImagickDraw();
-        if (file_exists($fontPath)) $drawFallback->setFont($fontPath);
-        $drawFallback->setFillColor('#000000'); // Texto negro para contraste
-        $drawFallback->setFontSize(40); // Tamaño visible
+        if (file_exists($fontPath)) $drawFallback->setFont($fontPath); // Usar Montserrat Black
+        $drawFallback->setFillColor('#000000'); 
+        $drawFallback->setFontSize(40); 
         $drawFallback->setFontWeight(900);
         $drawFallback->setTextAlignment(Imagick::ALIGN_CENTER);
 
-        // Calcular posición del texto dentro del canvas de fallback
         $metrics = $fallbackLogoCanvas->queryFontMetrics($drawFallback, 'LOGO');
         $textX = $logoWidthTarget / 2;
         $textY = ($logoHeightTarget + $metrics['textHeight']) / 2; 
 
         $fallbackLogoCanvas->annotateImage($drawFallback, $textX, $textY, 0, 'LOGO');
-        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoWidthTarget - 40, 30);
+        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoWidthTarget - 40, 15); // Posición 15
         error_log("✨ Se ha usado el logo de fallback de texto 'LOGO'.");
     }
     
@@ -328,7 +326,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $rowW = $numInRow * $photoW + ($numInRow - 1) * $gapX;
             $x = ($W - $rowW) / 2;
 
-            for ($c = 0; $c < $numInRow; $c++) {
+            for ($c = 0; c < $numInRow; $c++) {
                 $sp = $speakers[$index++] ?? null;
                 if (!$sp) continue;
 
