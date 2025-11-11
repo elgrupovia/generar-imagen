@@ -39,8 +39,10 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
                 $imagick->cropImage($w, $h, $x_offset, $y_offset);
                 $imagick->setImagePage($w, $h, 0, 0); // Ajustar el lienzo
             } elseif ($w > 0) {
+                // Si solo hay ancho, mantener proporción
                 $imagick->thumbnailImage($w, 0, true);
             } elseif ($h > 0) {
+                // Si solo hay altura, mantener proporción
                 $imagick->thumbnailImage(0, $h, true);
             }
             return $imagick;
@@ -170,6 +172,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         
         try {
             $m = new Imagick($tmp);
+            // Si es SVG, rasterizarlo a un tamaño razonable para que Imagick lo procese
+            if ($m->getImageFormat() === 'SVG') {
+                 // Puedes intentar establecer la resolución aquí para SVGs si da problemas de tamaño:
+                 // $m->setResolution(300, 300);
+            }
+
             if ($m->getImageWidth() === 0 || $m->getImageHeight() === 0) {
                  $m->destroy();
                  error_log("❌ Error leyendo $url - Imagick leyó el archivo pero la geometría es 0x0.");
@@ -240,8 +248,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
 
     // ✨ Logo superior derecho (Ajuste de posición y depuración de carga con FALLBACK de texto)
-    $logoWidthTarget = intval($W * 0.14); // Ancho deseado para el logo
-    $logoHeightTarget = intval($logoWidthTarget * 0.5); // Altura estimada para el logo o fallback
+    $logoMaxHeight = 100; // Altura máxima que queremos para el logo (un poco más que el banner)
+    $logoMaxWidth = intval($W * 0.25); // Ancho máximo para mantener la proporción
+    $logoHeightTarget = intval($logoMaxHeight); // La altura fija para el canvas de fallback
 
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
@@ -250,12 +259,13 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $headerLogo = $download_image($logoUrl);
             
             if ($headerLogo && $headerLogo->getImageWidth() > 0) {
-                $headerLogo = safe_thumbnail($headerLogo, $logoWidthTarget, 0, $logoUrl, 'logo header'); // Altura 0 para mantener proporción
+                // MODIFICACIÓN CLAVE: Redimensionar por ALTURA MÁXIMA fija
+                $headerLogo = safe_thumbnail($headerLogo, $logoMaxWidth, $logoMaxHeight, $logoUrl, 'logo header'); 
                 if ($headerLogo) {
-                    $x = $W - $headerLogo->getImageWidth() - 40;
-                    $y = 15; // ¡Ajuste para subir el logo!
+                    $x = $W - $headerLogo->getImageWidth() - 40; // Alineado a la derecha
+                    $y = 15; // Posición Y alta (cerca del borde superior)
                     $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
-                    error_log("✨ Logo header agregado en esquina superior derecha con éxito.");
+                    error_log("✨ Logo header agregado en esquina superior derecha con éxito. Tamaño: ".$headerLogo->getImageWidth()."x".$headerLogo->getImageHeight());
                 } else {
                      error_log("❌ FALLBACK: Error en redimensionado de logo descargado. Usando texto de fallback.");
                      $headerLogo = null; 
@@ -271,7 +281,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // Si el logo no se pudo cargar o no se especificó, crear un fallback de texto.
     if (!isset($headerLogo) || $headerLogo === null) {
         $fallbackLogoCanvas = new Imagick();
-        $fallbackLogoCanvas->newImage($logoWidthTarget, $logoHeightTarget, new ImagickPixel('transparent'));
+        $fallbackLogoCanvas->newImage($logoMaxWidth, $logoMaxHeight, new ImagickPixel('transparent'));
         $fallbackLogoCanvas->setImageFormat('png');
 
         $drawFallback = new ImagickDraw();
@@ -282,11 +292,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $drawFallback->setTextAlignment(Imagick::ALIGN_CENTER);
 
         $metrics = $fallbackLogoCanvas->queryFontMetrics($drawFallback, 'LOGO');
-        $textX = $logoWidthTarget / 2;
-        $textY = ($logoHeightTarget + $metrics['textHeight']) / 2; 
+        $textX = $logoMaxWidth / 2;
+        $textY = ($logoMaxHeight + $metrics['textHeight']) / 2; 
 
         $fallbackLogoCanvas->annotateImage($drawFallback, $textX, $textY, 0, 'LOGO');
-        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoWidthTarget - 40, 15); // Posición 15
+        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoMaxWidth - 40, 15); // Posición 15
         error_log("✨ Se ha usado el logo de fallback de texto 'LOGO'.");
     }
     
