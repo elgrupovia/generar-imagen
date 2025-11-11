@@ -19,15 +19,15 @@ add_action('rest_api_init', function () {
 });
 
 /**
- * Función de redimensionado seguro (Cover logic).
+ * Función de redimensionado seguro (Cover logic) - Para SPEAKERS y BANNERS.
+ * Asegura que la imagen CUBRA la dimensión objetivo (puede cortar los bordes).
  */
 function safe_thumbnail($imagick, $w, $h, $url, $context) {
-    if (!$imagick) return null; // Pre-check for null Imagick object
+    if (!$imagick) return null;
 
     try {
         if ($imagick->getImageWidth() > 0 && $imagick->getImageHeight() > 0) {
             if ($w > 0 && $h > 0) {
-                // Usar scaleImage + crop para asegurar que cubre y tiene el tamaño exacto (cover)
                 $scaleRatio = max($w / $imagick->getImageWidth(), $h / $imagick->getImageHeight());
                 $newW = (int)($imagick->getImageWidth() * $scaleRatio);
                 $newH = (int)($imagick->getImageHeight() * $scaleRatio);
@@ -37,12 +37,10 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
                 $x_offset = (int)(($newW - $w) / 2);
                 $y_offset = (int)(($newH - $h) / 2);
                 $imagick->cropImage($w, $h, $x_offset, $y_offset);
-                $imagick->setImagePage($w, $h, 0, 0); // Ajustar el lienzo
+                $imagick->setImagePage($w, $h, 0, 0);
             } elseif ($w > 0) {
-                // Si solo hay ancho, mantener proporción
                 $imagick->thumbnailImage($w, 0, true);
             } elseif ($h > 0) {
-                // Si solo hay altura, mantener proporción
                 $imagick->thumbnailImage(0, $h, true);
             }
             return $imagick;
@@ -57,8 +55,39 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
 }
 
 /**
+ * Nueva función de redimensionado para LOGOS (Contain/Ajustar) - Mantiene 16:9 y no CORTA.
+ * La imagen se ajusta para que quepa completamente dentro de las dimensiones.
+ */
+function gi_safe_contain_logo($imagick, $targetW, $targetH, $url, $context) {
+    if (!$imagick) return null;
+
+    try {
+        if ($imagick->getImageWidth() > 0 && $imagick->getImageHeight() > 0) {
+            if ($targetW > 0 && $targetH > 0) {
+                // Usar scaleImage con el factor de escala MIN para asegurar que quepa (contain)
+                $scaleRatio = min($targetW / $imagick->getImageWidth(), $targetH / $imagick->getImageHeight());
+                $newW = (int)($imagick->getImageWidth() * $scaleRatio);
+                $newH = (int)($imagick->getImageHeight() * $scaleRatio);
+
+                $imagick->scaleImage($newW, $newH);
+
+                // La imagen redimensionada ahora se ajusta a las dimensiones $newW x $newH
+                return $imagick;
+            }
+            return $imagick;
+        } else {
+            error_log("⚠️ Imagen inválida en $context: $url - Geometría 0x0.");
+            return null;
+        }
+    } catch (Exception $e) {
+        error_log("❌ Error gi_safe_contain_logo ($context): ".$e->getMessage());
+        return null;
+    }
+}
+
+
+/**
  * Aplica esquinas redondeadas a una imagen Imagick.
- * Se ha cambiado la lógica de COMPOSITE_DSTIN a COMPOSITE_COPYOPACITY para asegurar la limpieza del borde.
  */
 function gi_round_corners($imagick, $radius) {
     if (!$imagick) return $imagick;
@@ -67,29 +96,22 @@ function gi_round_corners($imagick, $radius) {
         $width = $imagick->getImageWidth();
         $height = $imagick->getImageHeight();
 
-        // Crear una máscara, pero ahora la crearemos como una imagen con transparencia
         $mask = new Imagick();
         $mask->newImage($width, $height, new ImagickPixel('transparent'));
         $mask->setImageFormat('png');
 
-        // Dibujar el rectángulo redondeado en la máscara
         $draw = new ImagickDraw();
-        $draw->setFillColor(new ImagickPixel('white')); // Color para la opacidad
+        $draw->setFillColor(new ImagickPixel('white'));
         $draw->roundRectangle(0, 0, $width - 1, $height - 1, $radius, $radius);
         $mask->drawImage($draw);
         
-        // 💡 Ajuste clave: Usar COMPOSITE_COPYOPACITY para transferir la opacidad de la máscara
-        // Esto asegura que la imagen original se recorte limpiamente
         $imagick->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0); 
         $mask->destroy();
-        
-        // El resto del área de la imagen debe ser transparente, pero solo aseguramos el recorte
-        // Si el formato es JPG, esto se convierte a blanco automáticamente
         
         return $imagick;
     } catch (Exception $e) {
         error_log("❌ Error al redondear esquinas: ".$e->getMessage());
-        return $imagick; // Retorna la imagen original si hay error
+        return $imagick;
     }
 }
 
@@ -116,8 +138,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $bg = $payload['canvas']['background'] ?? '#1a1a1a';
 
     // Ruta a la fuente Montserrat-Black (ajusta si es necesario)
-    $montserratBlackPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf'; // O la ruta correcta en tu sistema
-    $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+    $montserratBlackPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf';
+    $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'; // Mantenemos el fallback si el path no es válido
 
 
     // 🖼️ Crear lienzo base con fondo que COBRE TODO
@@ -126,7 +148,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $bg_image = new Imagick();
         try {
             $bg_image->readImage($bg);
-
             if ($bg_image->getImageWidth() > 0 && $bg_image->getImageHeight() > 0) {
                 $scaleRatio = max($W / $bg_image->getImageWidth(), $H / $bg_image->getImageHeight());
                 $newW = (int)($bg_image->getImageWidth() * $scaleRatio);
@@ -139,7 +160,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $bg_image->cropImage($W, $H, $x_offset, $y_offset);
 
                 $img = $bg_image;
-                $img->blurImage(2, 1); // Difuminar
+                $img->blurImage(2, 1);
                 error_log("🖼️ Fondo aplicado, escalado y difuminado para cubrir todo el lienzo");
             } else {
                  error_log("⚠️ Imagen de fondo inválida o no disponible: $bg. Usando color sólido.");
@@ -162,7 +183,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_TIMEOUT => 20,
             CURLOPT_SSL_VERIFYPEER => false,
-            // 💡 Nuevo: Simular un navegador web para evitar el 403 Forbidden
             CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         ]);
         $data = curl_exec($ch);
@@ -179,11 +199,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         
         try {
             $m = new Imagick($tmp);
-            // Si es SVG, rasterizarlo a un tamaño razonable para que Imagick lo procese
-            if ($m->getImageFormat() === 'SVG') {
-                 // Puedes intentar establecer la resolución aquí para SVGs si da problemas de tamaño:
-                 // $m->setResolution(300, 300);
-            }
 
             if ($m->getImageWidth() === 0 || $m->getImageHeight() === 0) {
                  $m->destroy();
@@ -200,7 +215,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
-    // 📐 Zonas de diseño (REAJUSTADO: Banner y contenido superior BAJADO)
+    // 📐 Zonas de diseño (REAJUSTADO)
     $headerStart = 0;
     $headerEnd = intval($H * 0.20); 
     
@@ -244,7 +259,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             if ($bannerImage) {
                 $cornerRadius = 40; 
                 $bannerImage = gi_round_corners($bannerImage, $cornerRadius);
-                // NO SOMBRA PARA EL BANNER
                 $img->compositeImage($bannerImage, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
                 error_log("🖼️ Banner de imagen principal agregado y redondeado.");
             }
@@ -255,10 +269,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
     }
 
-    // ✨ Logo superior derecho (Ajuste de posición y depuración de carga con FALLBACK de texto)
-    $logoMaxHeight = 70; // Altura máxima para el logo (más pequeño)
-    $logoMaxWidth = intval($W * 0.25); // Ancho máximo para mantener la proporción
-    $logoHeightTarget = intval($logoMaxHeight); // La altura fija para el canvas de fallback
+    // ✨ Logo superior derecho
+    $logoMaxHeight = 70; 
+    $logoMaxWidth = intval($W * 0.25); 
 
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
@@ -267,11 +280,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $headerLogo = $download_image($logoUrl);
             
             if ($headerLogo && $headerLogo->getImageWidth() > 0) {
-                // MODIFICACIÓN CLAVE: Redimensionar por ALTURA MÁXIMA fija
-                $headerLogo = safe_thumbnail($headerLogo, $logoMaxWidth, $logoMaxHeight, $logoUrl, 'logo header'); 
+                $headerLogo = gi_safe_contain_logo($headerLogo, $logoMaxWidth, $logoMaxHeight, $logoUrl, 'logo header'); 
                 if ($headerLogo) {
-                    $x = $W - $headerLogo->getImageWidth() - 40; // Alineado a la derecha
-                    $y = 15; // Posición Y alta (cerca del borde superior)
+                    $x = $W - $headerLogo->getImageWidth() - 40;
+                    $y = 15; 
                     $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
                     error_log("✨ Logo header agregado en esquina superior derecha con éxito. Tamaño: ".$headerLogo->getImageWidth()."x".$headerLogo->getImageHeight());
                 } else {
@@ -286,14 +298,14 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
 
-    // Si el logo no se pudo cargar o no se especificó, crear un fallback de texto.
+    // Fallback de Logo de texto
     if (!isset($headerLogo) || $headerLogo === null) {
         $fallbackLogoCanvas = new Imagick();
         $fallbackLogoCanvas->newImage($logoMaxWidth, $logoMaxHeight, new ImagickPixel('transparent'));
         $fallbackLogoCanvas->setImageFormat('png');
 
         $drawFallback = new ImagickDraw();
-        if (file_exists($fontPath)) $drawFallback->setFont($fontPath); // Usar Montserrat Black
+        if (file_exists($fontPath)) $drawFallback->setFont($fontPath);
         $drawFallback->setFillColor('#000000'); 
         $drawFallback->setFontSize(40); 
         $drawFallback->setFontWeight(900);
@@ -304,22 +316,22 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $textY = ($logoMaxHeight + $metrics['textHeight']) / 2; 
 
         $fallbackLogoCanvas->annotateImage($drawFallback, $textX, $textY, 0, 'LOGO');
-        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoMaxWidth - 40, 15); // Posición 15
+        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoMaxWidth - 40, 15);
         error_log("✨ Se ha usado el logo de fallback de texto 'LOGO'.");
     }
     
-    // 📅 Detalles del evento
+    // 📅 Detalles del evento (Fuente a 32px)
     $draw = new ImagickDraw();
-    if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
+    if (file_exists($fontPath)) $draw->setFont($fontPath);
     $draw->setFillColor('#FFFFFF');
-    $draw->setFontSize(32);
+    $draw->setFontSize(32); 
     $draw->setFontWeight(600);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
     $eventDetails = $payload['event_details'] ?? '6 noviembre 2026 9:00h - Silken Puerta Valencia';
     $img->annotateImage($draw, $W / 2, $eventInfoStart + 20, 0, $eventDetails); 
     error_log("📅 Detalles: $eventDetails (reposicionado)");
 
-    // 👤 Speakers con recuadros redondeados
+    // 👤 Speakers con recuadros redondeados (Fuentes a 32px y 22px)
     $speakers = $payload['speakers'] ?? [];
     if (!empty($speakers)) {
         error_log("🎤 Procesando ".count($speakers)." speakers");
@@ -372,7 +384,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                 try {
                     $draw = new ImagickDraw();
-                    if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
+                    if (file_exists($fontPath)) $draw->setFont($fontPath);
                     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
                     $draw->setFillColor('#000000'); 
                     $draw->setFontSize(32); 
@@ -387,7 +399,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                     if ($role) {
                         $drawRole = new ImagickDraw();
-                        if (file_exists($fontPath)) $drawRole->setFont($fontPath); // Usar Montserrat Black
+                        if (file_exists($fontPath)) $drawRole->setFont($fontPath);
                         $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
                         $drawRole->setFillColor('#555555'); 
                         $drawRole->setFontSize(22); 
@@ -402,8 +414,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
                 if (!$speakerCanvas) continue; 
                  
-                // NO SOMBRAS
-                
                 $img->compositeImage($speakerCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
 
                 $x += $photoW + $gapX;
@@ -412,7 +422,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("🎤 Grid: $rows filas x $cols columnas");
     }
 
-    // 🏷️ Sección de Ponentes
+    // 🏷️ Sección de Ponentes (Ajuste de Logos a 16:9 y Fuente a 30px)
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
         $sectionPonentesW = $W - 80; 
@@ -421,7 +431,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPonentesY = $sectionPonentesStart;
 
         $ponPonentessCanvas = new Imagick();
-        // Fondo blanco para la caja
         $ponPonentessCanvas->newImage($sectionPonentesW, $sectionPonentesH, new ImagickPixel('#FFFFFF'));
         $ponPonentessCanvas->setImageFormat('png');
 
@@ -432,10 +441,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             return new WP_REST_Response(['error'=>'Failed to round corners for ponentes section'], 500);
         }
         
-        // ---- A partir de aquí, el canvas ya está redondeado ----
-
         $draw = new ImagickDraw();
-        if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
+        if (file_exists($fontPath)) $draw->setFont($fontPath);
         $draw->setFillColor('#000000');
         $draw->setFontSize(30);
         $draw->setFontWeight(800);
@@ -446,15 +453,29 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
         $logosAreaTop = $titlePonentesY + 30; 
         $logosAreaHeight = $sectionPonentesH - $logosAreaTop - 20; 
-        $logoMaxH = intval($logosAreaHeight * 0.80); 
         
+        // **DIMENSIONES OBJETIVO PARA LOGOS (MÁXIMO 16:9)**
+        $logoAreaTargetH = intval($logosAreaHeight * 0.80);
+        $logoAreaTargetW = intval($logoAreaTargetH * (16/9)); // 16:9 proporción para el ancho máximo
+
         $totalLogosInRow = count($logos);
         $gapBetweenLogos = 40; 
         $horizontalPadding = 60; 
 
+        // Calculamos el ancho MÁXIMO disponible para cada logo, manteniendo el 16:9
         $availableLogosWidth = $sectionPonentesW - ($horizontalPadding * 2);
         $calculatedMaxW = ($availableLogosWidth - ($totalLogosInRow - 1) * $gapBetweenLogos) / $totalLogosInRow;
-        $maxW = min(180, (int)$calculatedMaxW); 
+        
+        // El ancho máximo real será el menor entre el ancho calculado y el ancho basado en la altura 16:9
+        $maxW = min($logoAreaTargetW, (int)$calculatedMaxW); 
+        $maxH = intval($maxW / (16/9)); // Altura ajustada para 16:9
+
+        // Asegurar que la altura no supere el área disponible
+        if ($maxH > $logoAreaTargetH) {
+             $maxH = $logoAreaTargetH;
+             $maxW = intval($maxH * (16/9));
+        }
+
 
         $actualLogosWidth = $totalLogosInRow * $maxW + ($totalLogosInRow - 1) * $gapBetweenLogos;
         $startLogoXInsideBox = $horizontalPadding + intval(($availableLogosWidth - $actualLogosWidth) / 2);
@@ -463,19 +484,23 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
         foreach ($logos as $logo) {
             $m = $download_image($logo['photo']);
-            $m = safe_thumbnail($m, $maxW, $logoMaxH, $logo['photo'], 'logo');
+            
+            // Usamos la nueva función CONTAIN/AJUSTAR
+            $m = gi_safe_contain_logo($m, $maxW, $maxH, $logo['photo'], 'logo ponente');
             if (!$m) continue;
             
-            $ponPonentessCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logosAreaTop + ($logosAreaHeight - $m->getImageHeight()) / 2));
-            $currentX += $maxW + $gapBetweenLogos;
+            // Calcular el centrado vertical dentro del área del logo
+            $logoY = $logosAreaTop + intval(($logosAreaHeight - $m->getImageHeight()) / 2);
+            
+            $ponPonentessCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
+            $currentX += $maxW + $gapBetweenLogos; // Avanzamos por el ancho máximo del slot (maxW), no por el ancho redimensionado (m->getImageWidth())
         }
 
-        // NO SOMBRAS
         $img->compositeImage($ponPonentessCanvas, Imagick::COMPOSITE_OVER, $sectionPonentesX, $sectionPonentesY);
-        error_log("💼 ".count($logos)." logos ponentes en recuadro redondeado con título encima.");
+        error_log("💼 ".count($logos)." logos ponentes ajustados a 16:9 (max ".$maxW."x".$maxH.").");
     }
 
-    // 🤝 Sección de Patrocinadores
+    // 🤝 Sección de Patrocinadores (Ajuste de Logos a 16:9 y Fuente a 30px)
     $sponsors = $payload['sponsors'] ?? [];
     $closingImages = $payload['closing_images'] ?? []; 
     
@@ -486,7 +511,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPatrocinadoresY = $sectionPatrocinadoresStart;
 
         $patrocinadoresCanvas = new Imagick();
-        // Fondo blanco para la caja
         $patrocinadoresCanvas->newImage($sectionPatrocinadoresW, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF'));
         $patrocinadoresCanvas->setImageFormat('png');
 
@@ -497,12 +521,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             return new WP_REST_Response(['error'=>'Failed to round corners for patrocinadores section'], 500);
         }
         
-        // ---- A partir de aquí, el canvas ya está redondeado ----
-
         $currentContentY = 40; 
 
         $draw = new ImagickDraw();
-        if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
+        if (file_exists($fontPath)) $draw->setFont($fontPath);
         $draw->setFillColor('#000000');
         $draw->setFontSize(30);
         $draw->setFontWeight(800);
@@ -516,15 +538,26 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         // Logos de Patrocinadores
         if (!empty($sponsors)) {
             $logosAreaHeight = $blockHeight; 
-            $logoMaxH = intval($logosAreaHeight * 0.70); 
             
+            // **DIMENSIONES OBJETIVO PARA SPONSORS (MÁXIMO 16:9)**
+            $logoAreaTargetH = intval($logosAreaHeight * 0.70);
+            $logoAreaTargetW = intval($logoAreaTargetH * (16/9)); 
+
             $totalSponsorsInRow = count($sponsors);
             $gapBetweenSponsors = 60;
             $horizontalPadding = 60; 
 
             $availableSponsorsWidth = $sectionPatrocinadoresW - ($horizontalPadding * 2);
             $calculatedMaxW = ($availableSponsorsWidth - ($totalSponsorsInRow - 1) * $gapBetweenSponsors) / $totalSponsorsInRow;
-            $maxW = min(300, (int)$calculatedMaxW); 
+            
+            $maxW = min($logoAreaTargetW, (int)$calculatedMaxW);
+            $maxH = intval($maxW / (16/9));
+
+             if ($maxH > $logoAreaTargetH) {
+                 $maxH = $logoAreaTargetH;
+                 $maxW = intval($maxH * (16/9));
+            }
+
 
             $actualSponsorsWidth = $totalSponsorsInRow * $maxW + ($totalSponsorsInRow - 1) * $gapBetweenSponsors;
             $startSponsorXInsideBox = $horizontalPadding + intval(($availableSponsorsWidth - $actualSponsorsWidth) / 2);
@@ -533,13 +566,17 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
             foreach ($sponsors as $sp) {
                 $m = $download_image($sp['photo']);
-                $m = safe_thumbnail($m, $maxW, $logoMaxH, $sp['photo'], 'sponsor');
+                
+                // Usamos la nueva función CONTAIN/AJUSTAR
+                $m = gi_safe_contain_logo($m, $maxW, $maxH, $sp['photo'], 'sponsor logo');
                 if (!$m) continue;
                 
-                $patrocinadoresCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($currentContentY + ($logosAreaHeight - $m->getImageHeight()) / 2)); 
-                $currentX += $maxW + $gapBetweenSponsors;
+                $logoY = $currentContentY + intval(($logosAreaHeight - $m->getImageHeight()) / 2);
+                
+                $patrocinadoresCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY)); 
+                $currentX += $maxW + $gapBetweenSponsors; // Avanzamos por el ancho máximo del slot (maxW)
             }
-            error_log("🤝 ".count($sponsors)." patrocinadores en recuadro.");
+            error_log("🤝 ".count($sponsors)." patrocinadores ajustados a 16:9 (max ".$maxW."x".$maxH.").");
         }
         $currentContentY += $blockHeight + 10; 
 
@@ -554,6 +591,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $img1 = $download_image($closingImages[0]['photo'] ?? null);
             $img2 = $download_image($closingImages[1]['photo'] ?? null);
 
+            // Estas imágenes no son logos, usamos la lógica de COVER (safe_thumbnail)
             $img1 = safe_thumbnail($img1, $imageW, $imageH, $closingImages[0]['photo'] ?? '', 'closing_image_1');
             $img2 = safe_thumbnail($img2, $imageW, $imageH, $closingImages[1]['photo'] ?? '', 'closing_image_2');
 
@@ -569,7 +607,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             error_log("🖼️ 2 imágenes finales agregadas.");
         }
 
-        // NO SOMBRAS
         $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, $sectionPatrocinadoresX, $sectionPatrocinadoresY);
     }
 
@@ -577,7 +614,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $format = strtolower($payload['output']['format'] ?? 'jpg');
     $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_inmobiliario').'.'.$format);
 
-    // Si el formato final es JPG, componer sobre un fondo blanco final
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
         $bg_layer->newImage($W, $H, new ImagickPixel('#ffffff'));
@@ -586,7 +622,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $img->setImageFormat('jpeg');
         $img->setImageCompressionQuality(90);
     }
-
+    
     $blob = $img->getImagesBlob();
     $img->destroy();
 
