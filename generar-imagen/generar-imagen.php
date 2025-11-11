@@ -170,35 +170,21 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
-    // 📐 Zonas de diseño (REVISADO para asegurar altura igual en recuadros inferiores)
+    // 📐 Zonas de diseño (Reorganizadas)
     $headerStart = 0;
     $headerEnd = intval($H * 0.15);
     $eventInfoStart = $headerEnd;
     $eventInfoEnd = intval($H * 0.22);
     $speakersStart = $eventInfoEnd;
-    $speakersEnd = intval($H * 0.65); // Final de la zona de speakers (65% de la altura total)
+    $speakersEnd = intval($H * 0.65); // Ajustamos el final de los speakers para dejar más espacio abajo
     
-    // Altura total restante para los dos recuadros + los gaps 
-    $remainingSpace = $H - $speakersEnd; 
+    // Nueva zona para Ponentes (Rectángulo con título arriba)
+    $sectionPonentesStart = $speakersEnd + 20; // Un pequeño gap después de los speakers
+    $sectionPonentesEnd = intval($H * 0.78); // Fin de la zona para ponentes
     
-    // Gaps (separación entre speakers, ponentes, y patrocinadores, y margen inferior)
-    $gapSize = 20; 
-    $totalGaps = $gapSize * 3; // Gap después de speakers, gap después de ponentes, y margen inferior (~H-End)
-
-    // Altura exacta que deben tener ambos rectángulos para que sean idénticos
-    $equalBoxHeight = intval(($remainingSpace - $totalGaps) / 2); 
-    
-    // --- DEFINICIÓN DE ZONAS CON ALTURA IGUALADA ---
-    
-    // 1. Zona Ponentes (Rectángulo con título arriba)
-    $sectionPonentesStart = $speakersEnd + $gapSize; 
-    $sectionPonentesEnd = $sectionPonentesStart + $equalBoxHeight; 
-    
-    // 2. Zona Patrocinadores (Rectángulo con título arriba y fotos)
-    $sectionPatrocinadoresStart = $sectionPonentesEnd + $gapSize; 
-    $sectionPatrocinadoresEnd = $sectionPatrocinadoresStart + $equalBoxHeight; 
-    
-    // (Asegurar que $sectionPatrocinadoresEnd no exceda $H, aunque el cálculo lo evita si $H es el margen final)
+    // Nueva zona para Patrocinadores (Rectángulo con título arriba y fotos) - Altura reducida
+    $sectionPatrocinadoresStart = $sectionPonentesEnd + 20; // Gap después de ponentes
+    $sectionPatrocinadoresEnd = intval($H * 0.95); // AJUSTE CLAVE: Reducimos su final
 
 
     // 🟢 Banner verde centrado con borde redondeado
@@ -394,12 +380,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("🎤 Grid: $rows filas x $cols columnas");
     }
 
-    // 🏷️ Sección de Ponentes (Rectángulo blanco redondeado con altura igualada)
+    // 🏷️ Sección de Ponentes (Rectángulo blanco redondeado con título arriba)
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
         $sectionPonentesW = $W - 80; // Ancho del recuadro (con 40px de margen a cada lado)
-        // Usamos $equalBoxHeight que se calculó para ser idéntica a la de patrocinadores
-        $sectionPonentesH = $equalBoxHeight; 
+        $sectionPonentesH = $sectionPonentesEnd - $sectionPonentesStart;
         $sectionPonentesX = ($W - $sectionPonentesW) / 2;
         $sectionPonentesY = $sectionPonentesStart;
 
@@ -472,14 +457,13 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("💼 ".count($logos)." logos ponentes en recuadro redondeado con título encima.");
     }
 
-    // 🤝 Sección de Patrocinadores (Rectángulo blanco redondeado con altura igualada)
+    // 🤝 Sección de Patrocinadores (Rectángulo blanco redondeado con título, logos y 2 fotos)
     $sponsors = $payload['sponsors'] ?? [];
-    $closingImages = $payload['closing_images'] ?? []; 
+    $closingImages = $payload['closing_images'] ?? []; // Asumo que estas son las 2 fotos
     
     if (!empty($sponsors) || !empty($closingImages)) {
         $sectionPatrocinadoresW = $W - 80; 
-        // Usamos $equalBoxHeight que se calculó para ser idéntica a la de ponentes
-        $sectionPatrocinadoresH = $equalBoxHeight; 
+        $sectionPatrocinadoresH = $sectionPatrocinadoresEnd - $sectionPatrocinadoresStart;
         $sectionPatrocinadoresX = ($W - $sectionPatrocinadoresW) / 2;
         $sectionPatrocinadoresY = $sectionPatrocinadoresStart;
 
