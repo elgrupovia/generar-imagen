@@ -172,14 +172,18 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📐 Zonas de diseño (REAJUSTADO para BAJAR TODO EL CONTENIDO Y ESTIRAR LA PARTE INFERIOR)
     $headerStart = 0;
-    $headerEnd = intval($H * 0.17); // <-- AJUSTE CLAVE: Subimos la cabecera (de 0.15 a 0.17)
-    $eventInfoStart = $headerEnd;
-    $eventInfoEnd = intval($H * 0.24); // También sube un poco (de 0.22 a 0.24)
+    // La altura del "header" ahora solo define la posición del banner (imagen o antiguo banner verde)
+    $headerEnd = intval($H * 0.17); 
+    
+    // El info del evento ahora empieza un poco después del header, dejando espacio para el banner de imagen
+    $eventInfoStart = $headerEnd + 20; // Un pequeño gap después del banner
+    $eventInfoEnd = intval($H * 0.24); 
+    
     $speakersStart = $eventInfoEnd;
-    $speakersEnd = intval($H * 0.70); // <-- AJUSTE CLAVE: Bajamos más el final de la zona de speakers (de 0.65 a 0.70)
+    $speakersEnd = intval($H * 0.70); // Bajamos más el final de la zona de speakers
     
     // Altura del lienzo hasta donde terminará Patrocinadores (Aumentado para reducir el margen inferior)
-    $finalAreaEnd = intval($H * 0.95); // <-- AJUSTE CLAVE: Estiramos el final del área de cajas (de 0.88 a 0.95)
+    $finalAreaEnd = intval($H * 0.95); 
     
     // Gaps (separación entre speakers/ponentes, ponentes/patrocinadores)
     $gapSize = 40; 
@@ -210,60 +214,28 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // Fin del ajuste de zonas. El contenido completo está más abajo y los recuadros inferiores ocupan más espacio vertical.
 
 
-    // 🟢 Banner verde centrado con borde redondeado
+    // 🖼️ Banner de IMAGEN centrado con borde redondeado (reemplaza al banner verde)
     $bannerBoxW = intval($W * 0.65);
-    $bannerBoxH = intval($headerEnd * 0.80);
-    
-    // Crear rectángulo redondeado
-    $draw = new ImagickDraw();
-    $draw->setFillColor('#2ecc71');
-    $draw->setStrokeColor('none');
-    $draw->setStrokeWidth(0);
-    $radius = 40;
-    $draw->roundRectangle(0, 0, $bannerBoxW, $bannerBoxH, $radius, $radius);
-    
-    // Crear imagen con esquinas redondeadas
-    $headerBox = new Imagick();
-    $headerBox->newImage($bannerBoxW, $bannerBoxH, new ImagickPixel('transparent'));
-    $headerBox->drawImage($draw);
-    $headerBox->setImageFormat('png');
-    
-    // Posicionar en el centro horizontalmente
+    $bannerBoxH = intval($headerEnd * 0.80); // Mismas medidas que el banner verde anterior
     $bannerX = intval(($W - $bannerBoxW) / 2);
-    // Posición del banner (se desplaza hacia abajo por el nuevo $headerEnd)
-    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20; 
-    $img->compositeImage($headerBox, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
-    error_log("🟢 Banner verde centrado agregado");
+    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20; // Posición similar a la del banner verde
 
-    // 📝 Título "FLEX LIVING" centrado en el banner
-    $montserratPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf';
-    $fontPath = file_exists($montserratPath) ? $montserratPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
-
-    $draw = new ImagickDraw();
-    if (file_exists($fontPath)) $draw->setFont($fontPath);
-    $draw->setFillColor('#FFFFFF');
-    $draw->setFontSize(76);
-    $draw->setFontWeight(900);
-    $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-    $img->annotateImage($draw, $W / 2, intval($bannerY + $bannerBoxH / 2 - 50), 0, $payload['header_title'] ?? 'FLEX LIVING');
-
-    // 📝 Subtítulo "BOOM! PROYECTOS"
-    $draw = new ImagickDraw();
-    if (file_exists($fontPath)) $draw->setFont($fontPath);
-    $draw->setFillColor('#FFFFFF');
-    $draw->setFontSize(36);
-    $draw->setFontWeight(700);
-    $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-    $img->annotateImage($draw, $W / 2, intval($bannerY + $bannerBoxH / 2 + 10), 0, $payload['header_subtitle'] ?? 'BOOM! PROYECTOS INMOBILIARIOS');
-
-    // 📝 Ciudad "Valencia"
-    $draw = new ImagickDraw();
-    if (file_exists($fontPath)) $draw->setFont($fontPath);
-    $draw->setFillColor('#FFFFFF');
-    $draw->setFontSize(28);
-    $draw->setFontWeight(600);
-    $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-    $img->annotateImage($draw, $W / 2, intval($bannerY + $bannerBoxH / 2 + 50), 0, $payload['header_city'] ?? 'Valencia');
+    if (!empty($payload['banner_image']) && ($bannerImageUrl = $payload['banner_image']['photo'] ?? null)) {
+        $bannerImage = $download_image($bannerImageUrl);
+        if ($bannerImage) {
+            $bannerImage = safe_thumbnail($bannerImage, $bannerBoxW, $bannerBoxH, $bannerImageUrl, 'banner principal');
+            if ($bannerImage) {
+                // Redondear las esquinas de la imagen del banner
+                $cornerRadius = 40; // Mismo radio que el banner verde anterior
+                $bannerImage = gi_round_corners($bannerImage, $cornerRadius);
+                $img->compositeImage($bannerImage, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
+                error_log("🖼️ Banner de imagen principal agregado y redondeado.");
+            }
+        }
+    } else {
+        // Fallback: si no hay imagen de banner, dejar un espacio vacío o un color sólido
+        error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
+    }
 
     // ✨ Logo superior derecho
     if (!empty($payload['header_logo'])) {
@@ -282,16 +254,17 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
 
-    // 📅 Detalles del evento
+    // 📅 Detalles del evento (REPOSICIONADO)
     $draw = new ImagickDraw();
     if (file_exists($fontPath)) $draw->setFont($fontPath);
     $draw->setFillColor('#FFFFFF');
     $draw->setFontSize(32);
     $draw->setFontWeight(600);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-    $eventDetails = $payload['event_details'] ?? '6 noviembre 2025 9:00h - Silken Puerta Valencia';
-    $img->annotateImage($draw, $W / 2, $eventInfoStart + 40, 0, $eventDetails);
-    error_log("📅 Detalles: $eventDetails");
+    $eventDetails = $payload['event_details'] ?? '6 noviembre 2026 9:00h - Silken Puerta Valencia';
+    // Reposicionamos el texto del evento para que esté justo debajo del banner de imagen
+    $img->annotateImage($draw, $W / 2, $eventInfoStart + 20, 0, $eventDetails); // Ajuste vertical
+    error_log("📅 Detalles: $eventDetails (reposicionado)");
 
     // 👤 Speakers con recuadros redondeados (Ajuste para alineación)
     $speakers = $payload['speakers'] ?? [];
