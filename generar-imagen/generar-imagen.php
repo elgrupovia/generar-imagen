@@ -86,7 +86,7 @@ function gi_round_corners($imagick, $radius) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('✅ Generando plantilla evento inmobiliario profesional');
+    error_log('🚀 Iniciando plugin Evento Inmobiliario Pro');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -105,6 +105,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $W = intval($payload['canvas']['width'] ?? 1600);
     $H = intval($payload['canvas']['height'] ?? 2400);
     $bg = $payload['canvas']['background'] ?? '#1a1a1a';
+
+    // Ruta a la fuente Montserrat-Black (ajusta si es necesario)
+    $montserratBlackPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf'; // O la ruta correcta en tu sistema
+    $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+
 
     // 🖼️ Crear lienzo base con fondo que COBRE TODO
     $img = new Imagick();
@@ -164,7 +169,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         try {
             $m = new Imagick($tmp);
             if ($m->getImageWidth() === 0 || $m->getImageHeight() === 0) {
-                 // Protección extra si Imagick lee el archivo pero devuelve 0x0 (ej. HTML mal formado)
                  $m->destroy();
                  error_log("❌ Error leyendo $url - Imagick leyó el archivo pero la geometría es 0x0.");
                  @unlink($tmp);
@@ -181,40 +185,28 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📐 Zonas de diseño (REAJUSTADO: Banner y contenido superior BAJADO)
     $headerStart = 0;
-    // Bajar más el header (de 0.17 a 0.20)
     $headerEnd = intval($H * 0.20); 
     
     $eventInfoStart = $headerEnd + 20; 
-    // Bajar más el event info (de 0.24 a 0.26)
     $eventInfoEnd = intval($H * 0.26); 
     
     $speakersStart = $eventInfoEnd;
     $speakersEnd = intval($H * 0.70); 
     
-    // Altura del lienzo hasta donde terminará Patrocinadores 
     $finalAreaEnd = intval($H * 0.95); 
     
-    // Gaps (separación entre speakers/ponentes, ponentes/patrocinadores)
     $gapSize = 40; 
     $totalGapsBetweenBoxes = $gapSize * 2; 
 
-    // Altura total disponible para los dos recuadros (Ponentes y Patrocinadores)
     $availableHeightForBoxes = $finalAreaEnd - $speakersEnd - $totalGapsBetweenBoxes;
-    
-    // Altura exacta que deben tener ambos rectángulos para que sean IDÉNTICOS
     $equalBoxHeight = intval($availableHeightForBoxes / 2); 
     
-    // --- DEFINICIÓN DE ZONAS ---
-    
-    // 1. Zona Ponentes 
     $sectionPonentesStart = $speakersEnd + $gapSize; 
     $sectionPonentesEnd = $sectionPonentesStart + $equalBoxHeight; 
     
-    // 2. Zona Patrocinadores 
     $sectionPatrocinadoresStart = $sectionPonentesEnd + $gapSize; 
     $sectionPatrocinadoresEnd = $sectionPatrocinadoresStart + $equalBoxHeight; 
     
-    // Corrección por posibles errores de redondeo de 1px
     if ($sectionPatrocinadoresEnd > $finalAreaEnd) {
         $sectionPatrocinadoresEnd = $finalAreaEnd;
         $sectionPonentesEnd = $sectionPatrocinadoresStart - $gapSize;
@@ -245,7 +237,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
     }
 
-    // ✨ Logo superior derecho (Ajuste y depuración de carga)
+    // ✨ Logo superior derecho (Ajuste y depuración de carga con FALLBACK de texto)
+    $logoWidthTarget = intval($W * 0.14); // Ancho deseado para el logo
+    $logoHeightTarget = intval($logoWidthTarget * 0.5); // Altura estimada para el logo o fallback
+
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
         if ($logoUrl) {
@@ -253,28 +248,51 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $headerLogo = $download_image($logoUrl);
             
             if ($headerLogo && $headerLogo->getImageWidth() > 0) {
-                $logoWidthTarget = intval($W * 0.14);
-                $headerLogo = safe_thumbnail($headerLogo, $logoWidthTarget, 0, $logoUrl, 'logo header');
+                $headerLogo = safe_thumbnail($headerLogo, $logoWidthTarget, 0, $logoUrl, 'logo header'); // Altura 0 para mantener proporción
                 if ($headerLogo) {
                     $x = $W - $headerLogo->getImageWidth() - 40;
-                    $y = 30; // Posición fija cerca de la esquina superior
+                    $y = 30; 
                     $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
                     error_log("✨ Logo header agregado en esquina superior derecha con éxito.");
+                } else {
+                     error_log("❌ FALLBACK: Error en redimensionado de logo descargado. Usando texto de fallback.");
+                     // Si el redimensionado falla (Imagick lo considera inválido tras descarga)
+                     $headerLogo = null; 
                 }
             } else {
-                 error_log("❌ ERROR CRÍTICO DE LOGO: No se pudo cargar o Imagick no lo reconoció como imagen. URL: $logoUrl");
+                 error_log("❌ FALLBACK: No se pudo cargar el logo desde la URL $logoUrl. Usando texto de fallback.");
             }
         } else {
-             error_log("⚠️ 'header_logo' está presente en el JSON, pero la URL de la foto está vacía.");
+             error_log("⚠️ 'header_logo' está presente en el JSON, pero la URL de la foto está vacía. Usando texto de fallback.");
         }
+    }
+
+    // Si el logo no se pudo cargar o no se especificó, crear un fallback de texto.
+    if (!isset($headerLogo) || $headerLogo === null) {
+        $fallbackLogoCanvas = new Imagick();
+        $fallbackLogoCanvas->newImage($logoWidthTarget, $logoHeightTarget, new ImagickPixel('transparent'));
+        $fallbackLogoCanvas->setImageFormat('png');
+
+        $drawFallback = new ImagickDraw();
+        if (file_exists($fontPath)) $drawFallback->setFont($fontPath);
+        $drawFallback->setFillColor('#000000'); // Texto negro para contraste
+        $drawFallback->setFontSize(40); // Tamaño visible
+        $drawFallback->setFontWeight(900);
+        $drawFallback->setTextAlignment(Imagick::ALIGN_CENTER);
+
+        // Calcular posición del texto dentro del canvas de fallback
+        $metrics = $fallbackLogoCanvas->queryFontMetrics($drawFallback, 'LOGO');
+        $textX = $logoWidthTarget / 2;
+        $textY = ($logoHeightTarget + $metrics['textHeight']) / 2; 
+
+        $fallbackLogoCanvas->annotateImage($drawFallback, $textX, $textY, 0, 'LOGO');
+        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoWidthTarget - 40, 30);
+        error_log("✨ Se ha usado el logo de fallback de texto 'LOGO'.");
     }
     
     // 📅 Detalles del evento
-    $montserratPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf';
-    $fontPath = file_exists($montserratPath) ? $montserratPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
-
     $draw = new ImagickDraw();
-    if (file_exists($fontPath)) $draw->setFont($fontPath);
+    if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
     $draw->setFillColor('#FFFFFF');
     $draw->setFontSize(32);
     $draw->setFontWeight(600);
@@ -336,7 +354,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                 try {
                     $draw = new ImagickDraw();
-                    if (file_exists($fontPath)) $draw->setFont($fontPath);
+                    if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
                     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
                     $draw->setFillColor('#000000'); 
                     $draw->setFontSize(32); 
@@ -351,7 +369,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                     if ($role) {
                         $drawRole = new ImagickDraw();
-                        if (file_exists($fontPath)) $drawRole->setFont($fontPath);
+                        if (file_exists($fontPath)) $drawRole->setFont($fontPath); // Usar Montserrat Black
                         $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
                         $drawRole->setFillColor('#555555'); 
                         $drawRole->setFontSize(22); 
@@ -403,7 +421,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
 
         $draw = new ImagickDraw();
-        if (file_exists($fontPath)) $draw->setFont($fontPath);
+        if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
         $draw->setFillColor('#000000');
         $draw->setFontSize(30);
         $draw->setFontWeight(800);
@@ -475,7 +493,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $currentContentY = 40; 
 
         $draw = new ImagickDraw();
-        if (file_exists($fontPath)) $draw->setFont($fontPath);
+        if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
         $draw->setFillColor('#000000');
         $draw->setFontSize(30);
         $draw->setFontWeight(800);
