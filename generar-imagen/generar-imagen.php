@@ -326,7 +326,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $rowW = $numInRow * $photoW + ($numInRow - 1) * $gapX;
             $x = ($W - $rowW) / 2;
 
-            for ($c = 0; c < $numInRow; $c++) {
+            // ESTA ES LA LÍNEA CORREGIDA (de 'c' a '$c'):
+            for ($c = 0; $c < $numInRow; $c++) {
                 $sp = $speakers[$index++] ?? null;
                 if (!$sp) continue;
 
