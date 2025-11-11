@@ -145,7 +145,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
     $img->setImageFormat('png');
 
-    // 🔽 Descargar imágenes
+    // 🔽 Descargar imágenes (CON USER-AGENT AGREGADO)
     $download_image = function(string $url) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -153,6 +153,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_TIMEOUT => 20,
             CURLOPT_SSL_VERIFYPEER => false,
+            // 💡 Nuevo: Simular un navegador web para evitar el 403 Forbidden
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         ]);
         $data = curl_exec($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -326,7 +328,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $rowW = $numInRow * $photoW + ($numInRow - 1) * $gapX;
             $x = ($W - $rowW) / 2;
 
-            // ESTA ES LA LÍNEA CORREGIDA (de 'c' a '$c'):
             for ($c = 0; $c < $numInRow; $c++) {
                 $sp = $speakers[$index++] ?? null;
                 if (!$sp) continue;
