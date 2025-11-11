@@ -248,7 +248,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
 
     // ✨ Logo superior derecho (Ajuste de posición y depuración de carga con FALLBACK de texto)
-    $logoMaxHeight = 100; // Altura máxima que queremos para el logo (un poco más que el banner)
+    $logoMaxHeight = 70; // <-- MODIFICADO: Altura máxima para el logo (más pequeño)
     $logoMaxWidth = intval($W * 0.25); // Ancho máximo para mantener la proporción
     $logoHeightTarget = intval($logoMaxHeight); // La altura fija para el canvas de fallback
 
@@ -397,8 +397,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 try {
                     $shadow = new Imagick();
                     $shadow->readImageBlob($speakerCanvas->getImageBlob());
-                    $shadow->shadowImage(80, 3, 0, 0);
-                    $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($x) - 3, intval($y) + 3);
+                    // MODIFICADO: Desplazamiento X e Y para la sombra
+                    $shadow->shadowImage(80, 3, 5, 5); // <--- AQUI CAMBIAMOS
+                    $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($x) + 5, intval($y) + 5); // <--- Ajuste de la posición de composite
                 } catch (Exception $e) {
                     error_log("⚠️ Sombra no aplicada: ".$e->getMessage());
                 }
@@ -469,8 +470,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         try {
             $shadow = new Imagick();
             $shadow->readImageBlob($ponPonentessCanvas->getImageBlob());
-            $shadow->shadowImage(80, 3, 0, 0);
-            $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($sectionPonentesX) - 3, intval($sectionPonentesY) + 3);
+            // MODIFICADO: Desplazamiento X e Y para la sombra
+            $shadow->shadowImage(80, 3, 5, 5); // <--- AQUI CAMBIAMOS
+            $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($sectionPonentesX) + 5, intval($sectionPonentesY) + 5); // <--- Ajuste de la posición de composite
         } catch (Exception $e) {
             error_log("⚠️ Sombra no aplicada al recuadro de ponentes: ".$e->getMessage());
         }
@@ -573,8 +575,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         try {
             $shadow = new Imagick();
             $shadow->readImageBlob($patrocinadoresCanvas->getImageBlob());
-            $shadow->shadowImage(80, 3, 0, 0);
-            $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($sectionPatrocinadoresX) - 3, intval($sectionPatrocinadoresY) + 3);
+            // MODIFICADO: Desplazamiento X e Y para la sombra
+            $shadow->shadowImage(80, 3, 5, 5); // <--- AQUI CAMBIAMOS
+            $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($sectionPatrocinadoresX) + 5, intval($sectionPatrocinadoresY) + 5); // <--- Ajuste de la posición de composite
         } catch (Exception $e) {
             error_log("⚠️ Sombra no aplicada al recuadro de patrocinadores: ".$e->getMessage());
         }
