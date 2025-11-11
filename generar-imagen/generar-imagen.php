@@ -193,10 +193,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📐 Zonas de diseño (AJUSTADO: Más espacio superior)
     $headerStart = 0;
-    $headerEnd = intval($H * 0.25); // Más alto, da más margen
+    $headerEnd = intval($H * 0.35); // Más alto, da más margen
 
-    $eventInfoStart = $headerEnd + 30; // Desplazado 
-    $eventInfoEnd = intval($H * 0.32); 
+    $eventInfoStart = $headerEnd + 35; // Desplazado 
+    $eventInfoEnd = intval($H * 0.42); 
     
     $speakersStart = $eventInfoEnd;
     $speakersEnd = intval($H * 0.70); 
