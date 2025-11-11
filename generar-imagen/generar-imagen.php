@@ -170,19 +170,19 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
-    // 📐 Zonas de diseño (REAJUSTADO para BAJAR TODO EL CONTENIDO Y ESTIRAR LA PARTE INFERIOR)
+    // 📐 Zonas de diseño (REAJUSTADO: Banner y contenido superior BAJADO)
     $headerStart = 0;
-    // La altura del "header" ahora solo define la posición del banner (imagen o antiguo banner verde)
-    $headerEnd = intval($H * 0.17); 
+    // Bajar más el header (de 0.17 a 0.20)
+    $headerEnd = intval($H * 0.20); 
     
-    // El info del evento ahora empieza un poco después del header, dejando espacio para el banner de imagen
-    $eventInfoStart = $headerEnd + 20; // Un pequeño gap después del banner
-    $eventInfoEnd = intval($H * 0.24); 
+    $eventInfoStart = $headerEnd + 20; 
+    // Bajar más el event info (de 0.24 a 0.26)
+    $eventInfoEnd = intval($H * 0.26); 
     
     $speakersStart = $eventInfoEnd;
-    $speakersEnd = intval($H * 0.70); // Bajamos más el final de la zona de speakers
+    $speakersEnd = intval($H * 0.70); 
     
-    // Altura del lienzo hasta donde terminará Patrocinadores (Aumentado para reducir el margen inferior)
+    // Altura del lienzo hasta donde terminará Patrocinadores 
     $finalAreaEnd = intval($H * 0.95); 
     
     // Gaps (separación entre speakers/ponentes, ponentes/patrocinadores)
@@ -195,13 +195,13 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // Altura exacta que deben tener ambos rectángulos para que sean IDÉNTICOS
     $equalBoxHeight = intval($availableHeightForBoxes / 2); 
     
-    // --- DEFINICIÓN DE ZONAS CON ALTURA IGUALADA, MÁS GRANDES Y MÁS ABAJO ---
+    // --- DEFINICIÓN DE ZONAS ---
     
-    // 1. Zona Ponentes (Rectángulo con título arriba)
+    // 1. Zona Ponentes 
     $sectionPonentesStart = $speakersEnd + $gapSize; 
     $sectionPonentesEnd = $sectionPonentesStart + $equalBoxHeight; 
     
-    // 2. Zona Patrocinadores (Rectángulo con título arriba y fotos)
+    // 2. Zona Patrocinadores 
     $sectionPatrocinadoresStart = $sectionPonentesEnd + $gapSize; 
     $sectionPatrocinadoresEnd = $sectionPatrocinadoresStart + $equalBoxHeight; 
     
@@ -211,50 +211,56 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPonentesEnd = $sectionPatrocinadoresStart - $gapSize;
         $equalBoxHeight = $sectionPonentesEnd - $sectionPonentesStart;
     }
-    // Fin del ajuste de zonas. El contenido completo está más abajo y los recuadros inferiores ocupan más espacio vertical.
 
 
-    // 🖼️ Banner de IMAGEN centrado con borde redondeado (reemplaza al banner verde)
+    // 🖼️ Banner de IMAGEN centrado con borde redondeado
     $bannerBoxW = intval($W * 0.65);
-    $bannerBoxH = intval($headerEnd * 0.80); // Mismas medidas que el banner verde anterior
+    $bannerBoxH = intval($headerEnd * 0.80); 
     $bannerX = intval(($W - $bannerBoxW) / 2);
-    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20; // Posición similar a la del banner verde
+    // Ajuste de posición: centrado verticalmente en el nuevo headerEnd
+    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20; 
 
     if (!empty($payload['banner_image']) && ($bannerImageUrl = $payload['banner_image']['photo'] ?? null)) {
         $bannerImage = $download_image($bannerImageUrl);
         if ($bannerImage) {
             $bannerImage = safe_thumbnail($bannerImage, $bannerBoxW, $bannerBoxH, $bannerImageUrl, 'banner principal');
             if ($bannerImage) {
-                // Redondear las esquinas de la imagen del banner
-                $cornerRadius = 40; // Mismo radio que el banner verde anterior
+                $cornerRadius = 40; 
                 $bannerImage = gi_round_corners($bannerImage, $cornerRadius);
                 $img->compositeImage($bannerImage, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
                 error_log("🖼️ Banner de imagen principal agregado y redondeado.");
             }
         }
     } else {
-        // Fallback: si no hay imagen de banner, dejar un espacio vacío o un color sólido
         error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
     }
 
-    // ✨ Logo superior derecho
+    // ✨ Logo superior derecho (Solución al error de Invalid Image Geometry)
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
         if ($logoUrl) {
+            error_log("🔍 Intentando descargar logo header desde: $logoUrl");
             $headerLogo = $download_image($logoUrl);
+            
             if ($headerLogo) {
+                // El tamaño del logo se mantiene pequeño
                 $headerLogo = safe_thumbnail($headerLogo, intval($W * 0.14), 0, $logoUrl, 'logo header');
                 if ($headerLogo) {
                     $x = $W - $headerLogo->getImageWidth() - 40;
-                    $y = 30;
+                    $y = 30; // Posición fija cerca de la esquina superior
                     $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
-                    error_log("✨ Logo header agregado en esquina superior derecha");
+                    error_log("✨ Logo header agregado en esquina superior derecha.");
                 }
+            } else {
+                 error_log("❌ Error: No se pudo cargar el logo desde la URL $logoUrl.");
             }
         }
     }
+    
+    // 📅 Detalles del evento
+    $montserratPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf';
+    $fontPath = file_exists($montserratPath) ? $montserratPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
-    // 📅 Detalles del evento (REPOSICIONADO)
     $draw = new ImagickDraw();
     if (file_exists($fontPath)) $draw->setFont($fontPath);
     $draw->setFillColor('#FFFFFF');
@@ -263,7 +269,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
     $eventDetails = $payload['event_details'] ?? '6 noviembre 2026 9:00h - Silken Puerta Valencia';
     // Reposicionamos el texto del evento para que esté justo debajo del banner de imagen
-    $img->annotateImage($draw, $W / 2, $eventInfoStart + 20, 0, $eventDetails); // Ajuste vertical
+    $img->annotateImage($draw, $W / 2, $eventInfoStart + 20, 0, $eventDetails); 
     error_log("📅 Detalles: $eventDetails (reposicionado)");
 
     // 👤 Speakers con recuadros redondeados (Ajuste para alineación)
@@ -380,8 +386,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // 🏷️ Sección de Ponentes (Rectángulo blanco redondeado con altura igualada)
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
-        $sectionPonentesW = $W - 80; // Ancho del recuadro (con 40px de margen a cada lado)
-        // Usamos $equalBoxHeight que se calculó para ser idéntica a la de patrocinadores
+        $sectionPonentesW = $W - 80; 
         $sectionPonentesH = $equalBoxHeight; 
         $sectionPonentesX = ($W - $sectionPonentesW) / 2;
         $sectionPonentesY = $sectionPonentesStart;
@@ -408,17 +413,17 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
         
         // Posicionar el título "Ponentes:" centrado en la parte superior del recuadro
-        $titlePonentesY = 40; // Desde el top del canvas de ponentes
+        $titlePonentesY = 40; 
         $ponPonentessCanvas->annotateImage($draw, $sectionPonentesW / 2, $titlePonentesY, 0, 'Ponentes:');
 
         // Calcular la zona de los logos dentro del recuadro
-        $logosAreaTop = $titlePonentesY + 30; // Debajo del título
-        $logosAreaHeight = $sectionPonentesH - $logosAreaTop - 20; // Altura restante para logos, con un margen inferior
-        $logoMaxH = intval($logosAreaHeight * 0.80); // Máx altura para los logos dentro del recuadro
+        $logosAreaTop = $titlePonentesY + 30; 
+        $logosAreaHeight = $sectionPonentesH - $logosAreaTop - 20; 
+        $logoMaxH = intval($logosAreaHeight * 0.80); 
         
         $totalLogosInRow = count($logos);
         $gapBetweenLogos = 40; 
-        $horizontalPadding = 60; // Padding horizontal dentro del recuadro para los logos
+        $horizontalPadding = 60; 
 
         $availableLogosWidth = $sectionPonentesW - ($horizontalPadding * 2);
         $calculatedMaxW = ($availableLogosWidth - ($totalLogosInRow - 1) * $gapBetweenLogos) / $totalLogosInRow;
@@ -461,7 +466,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     
     if (!empty($sponsors) || !empty($closingImages)) {
         $sectionPatrocinadoresW = $W - 80; 
-        // Usamos $equalBoxHeight que se calculó para ser idéntica a la de ponentes
         $sectionPatrocinadoresH = $equalBoxHeight; 
         $sectionPatrocinadoresX = ($W - $sectionPatrocinadoresW) / 2;
         $sectionPatrocinadoresY = $sectionPatrocinadoresStart;
@@ -478,7 +482,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             return new WP_REST_Response(['error'=>'Failed to round corners for patrocinadores section'], 500);
         }
 
-        $currentContentY = 40; // Empieza el contenido dentro del canvas de patrocinadores
+        $currentContentY = 40; 
 
         // Título "Patrocina:"
         $draw = new ImagickDraw();
@@ -488,15 +492,15 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
         $patrocinadoresCanvas->annotateImage($draw, $sectionPatrocinadoresW / 2, $currentContentY, 0, 'Patrocina:');
-        $currentContentY += 60; // Espacio después del título
+        $currentContentY += 60; 
 
-        // Calcular el espacio disponible para Logos y para Imágenes, de forma más equitativa
-        $remainingHeight = $sectionPatrocinadoresH - $currentContentY - 20; // Altura total disponible para ambos bloques
-        $blockHeight = intval($remainingHeight / 2); // Cada bloque (logos y fotos) ocupa la mitad
+        // Calcular el espacio disponible para Logos y para Imágenes
+        $remainingHeight = $sectionPatrocinadoresH - $currentContentY - 20; 
+        $blockHeight = intval($remainingHeight / 2); 
 
         // Logos de Patrocinadores
         if (!empty($sponsors)) {
-            $logosAreaHeight = $blockHeight; // Altura fija para los logos
+            $logosAreaHeight = $blockHeight; 
             $logoMaxH = intval($logosAreaHeight * 0.70); 
             
             $totalSponsorsInRow = count($sponsors);
@@ -523,11 +527,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             }
             error_log("🤝 ".count($sponsors)." patrocinadores en recuadro.");
         }
-        $currentContentY += $blockHeight + 10; // Mover hacia abajo, con un pequeño gap
+        $currentContentY += $blockHeight + 10; 
 
         // Las 2 Fotos Finales
         if (!empty($closingImages) && count($closingImages) >= 2) {
-            $imagesAreaHeight = $blockHeight; // Altura fija para las imágenes
+            $imagesAreaHeight = $blockHeight; 
             $imageMaxH = intval($imagesAreaHeight * 0.80);
             
             $imageW = intval($sectionPatrocinadoresW / 2 - 80); 
