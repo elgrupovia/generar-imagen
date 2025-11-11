@@ -66,17 +66,18 @@ function gi_round_corners($imagick, $radius) {
         $width = $imagick->getImageWidth();
         $height = $imagick->getImageHeight();
 
+        // Crear una máscara transparente con las esquinas redondeadas
         $draw = new ImagickDraw();
-        $draw->setFillColor(new ImagickPixel('black')); // Color para la máscara
-        $draw->setStrokeColor(new ImagickPixel('black'));
+        $draw->setFillColor(new ImagickPixel('black')); // El color no importa, solo la forma
         $draw->roundRectangle(0, 0, $width - 1, $height - 1, $radius, $radius);
 
         $mask = new Imagick();
         $mask->newImage($width, $height, new ImagickPixel('transparent'));
         $mask->drawImage($draw);
-        $mask->setImageFormat('png');
+        $mask->setImageFormat('png'); // Importante para la transparencia
 
-        $imagick->compositeImage($mask, Imagick::COMPOSITE_DSTIN, 0, 0); // Aplica la máscara
+        // Aplicar la máscara a la imagen
+        $imagick->compositeImage($mask, Imagick::COMPOSITE_DSTIN, 0, 0); 
         $mask->destroy();
         
         return $imagick;
@@ -237,6 +238,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             if ($bannerImage) {
                 $cornerRadius = 40; 
                 $bannerImage = gi_round_corners($bannerImage, $cornerRadius);
+                // NO SOMBRA PARA EL BANNER
                 $img->compositeImage($bannerImage, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
                 error_log("🖼️ Banner de imagen principal agregado y redondeado.");
             }
@@ -394,15 +396,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
                 if (!$speakerCanvas) continue; 
                  
-                try {
-                    $shadow = new Imagick();
-                    $shadow->readImageBlob($speakerCanvas->getImageBlob());
-                    // MODIFICADO: Desplazamiento X e Y para la sombra
-                    $shadow->shadowImage(80, 3, 5, 5); // <--- AQUI CAMBIAMOS
-                    $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($x) + 5, intval($y) + 5); // <--- Ajuste de la posición de composite
-                } catch (Exception $e) {
-                    error_log("⚠️ Sombra no aplicada: ".$e->getMessage());
-                }
+                // ELIMINADAS LAS SOMBRAS DE SPEAKERS
                 
                 $img->compositeImage($speakerCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
 
@@ -467,15 +461,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $currentX += $maxW + $gapBetweenLogos;
         }
 
-        try {
-            $shadow = new Imagick();
-            $shadow->readImageBlob($ponPonentessCanvas->getImageBlob());
-            // MODIFICADO: Desplazamiento X e Y para la sombra
-            $shadow->shadowImage(80, 3, 5, 5); // <--- AQUI CAMBIAMOS
-            $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($sectionPonentesX) + 5, intval($sectionPonentesY) + 5); // <--- Ajuste de la posición de composite
-        } catch (Exception $e) {
-            error_log("⚠️ Sombra no aplicada al recuadro de ponentes: ".$e->getMessage());
-        }
+        // ELIMINADAS LAS SOMBRAS DE RECUADRO DE PONENTES
 
         $img->compositeImage($ponPonentessCanvas, Imagick::COMPOSITE_OVER, $sectionPonentesX, $sectionPonentesY);
         error_log("💼 ".count($logos)." logos ponentes en recuadro redondeado con título encima.");
@@ -572,15 +558,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             error_log("🖼️ 2 imágenes finales agregadas.");
         }
 
-        try {
-            $shadow = new Imagick();
-            $shadow->readImageBlob($patrocinadoresCanvas->getImageBlob());
-            // MODIFICADO: Desplazamiento X e Y para la sombra
-            $shadow->shadowImage(80, 3, 5, 5); // <--- AQUI CAMBIAMOS
-            $img->compositeImage($shadow, Imagick::COMPOSITE_OVER, intval($sectionPatrocinadoresX) + 5, intval($sectionPatrocinadoresY) + 5); // <--- Ajuste de la posición de composite
-        } catch (Exception $e) {
-            error_log("⚠️ Sombra no aplicada al recuadro de patrocinadores: ".$e->getMessage());
-        }
+        // ELIMINADAS LAS SOMBRAS DE RECUADRO DE PATROCINADORES
 
         $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, $sectionPatrocinadoresX, $sectionPatrocinadoresY);
     }
