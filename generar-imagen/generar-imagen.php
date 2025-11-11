@@ -170,7 +170,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
-    // 📐 Zonas de diseño (REAJUSTADO para Altura de Patrocinadores = Altura de Ponentes)
+    // 📐 Zonas de diseño (REAJUSTADO para Altura de Patrocinadores = Altura de Ponentes, REDUCIDOS y BAJADOS)
     $headerStart = 0;
     $headerEnd = intval($H * 0.15);
     $eventInfoStart = $headerEnd;
@@ -178,27 +178,28 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $speakersStart = $eventInfoEnd;
     $speakersEnd = intval($H * 0.65); // Final de la zona de speakers (65% de la altura total)
     
-    // Altura del lienzo hasta donde terminaba Patrocinadores en el código anterior (H * 0.95)
-    $finalAreaEnd = intval($H * 0.95); 
+    // Altura del lienzo hasta donde terminará Patrocinadores (REDUCIDO de 0.95 a 0.88)
+    $finalAreaEnd = intval($H * 0.88); // <-- AJUSTE CLAVE: Reducimos la altura final del área de cajas
     
     // Gaps (separación entre speakers/ponentes, ponentes/patrocinadores)
-    $gapSize = 20; 
+    $gapSize = 40; // <-- AJUSTE CLAVE: Aumentamos el tamaño del gap
     $totalGapsBetweenBoxes = $gapSize * 2; // Dos gaps entre los tres elementos (Speakers/Ponentes, Ponentes/Patrocinadores)
 
     // Altura total disponible para los dos recuadros (Ponentes y Patrocinadores)
+    // El espacio empieza más abajo (debido al $gapSize aumentado) y termina más arriba ($finalAreaEnd reducido)
     $availableHeightForBoxes = $finalAreaEnd - $speakersEnd - $totalGapsBetweenBoxes;
     
     // Altura exacta que deben tener ambos rectángulos para que sean IDÉNTICOS
     $equalBoxHeight = intval($availableHeightForBoxes / 2); 
     
-    // --- DEFINICIÓN DE ZONAS CON ALTURA IGUALADA Y GRANDE ---
+    // --- DEFINICIÓN DE ZONAS CON ALTURA IGUALADA, MÁS PEQUEÑA Y MÁS ABAJO ---
     
     // 1. Zona Ponentes (Rectángulo con título arriba)
-    $sectionPonentesStart = $speakersEnd + $gapSize; 
+    $sectionPonentesStart = $speakersEnd + $gapSize; // Empieza más abajo por el gap aumentado
     $sectionPonentesEnd = $sectionPonentesStart + $equalBoxHeight; 
     
     // 2. Zona Patrocinadores (Rectángulo con título arriba y fotos)
-    $sectionPatrocinadoresStart = $sectionPonentesEnd + $gapSize; 
+    $sectionPatrocinadoresStart = $sectionPonentesEnd + $gapSize; // También se desplaza más abajo
     $sectionPatrocinadoresEnd = $sectionPatrocinadoresStart + $equalBoxHeight; 
     
     // Corrección por posibles errores de redondeo de 1px
@@ -207,7 +208,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPonentesEnd = $sectionPatrocinadoresStart - $gapSize;
         $equalBoxHeight = $sectionPonentesEnd - $sectionPonentesStart;
     }
-    // Fin del ajuste de zonas. Ambos recuadros tendrán la misma altura ($equalBoxHeight).
+    // Fin del ajuste de zonas. Ambos recuadros tendrán la misma altura ($equalBoxHeight), serán más pequeños y estarán más abajo.
 
 
     // 🟢 Banner verde centrado con borde redondeado
