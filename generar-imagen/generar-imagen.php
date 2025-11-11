@@ -8,7 +8,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Evento Inmobiliario Pro');
+error_log('🚀 Iniciando plugin Caratula evento');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -58,7 +58,7 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
 
 /**
  * Aplica esquinas redondeadas a una imagen Imagick.
- * Se usa COMPOSITE_COPYOPACITY para asegurar la limpieza del borde.
+ * Se ha cambiado la lógica de COMPOSITE_DSTIN a COMPOSITE_COPYOPACITY para asegurar la limpieza del borde.
  */
 function gi_round_corners($imagick, $radius) {
     if (!$imagick) return $imagick;
@@ -67,7 +67,7 @@ function gi_round_corners($imagick, $radius) {
         $width = $imagick->getImageWidth();
         $height = $imagick->getImageHeight();
 
-        // Crear una máscara, pero ahora la crearemos como una imagen con opacidad
+        // Crear una máscara, pero ahora la crearemos como una imagen con transparencia
         $mask = new Imagick();
         $mask->newImage($width, $height, new ImagickPixel('transparent'));
         $mask->setImageFormat('png');
@@ -79,8 +79,12 @@ function gi_round_corners($imagick, $radius) {
         $mask->drawImage($draw);
         
         // 💡 Ajuste clave: Usar COMPOSITE_COPYOPACITY para transferir la opacidad de la máscara
+        // Esto asegura que la imagen original se recorte limpiamente
         $imagick->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0); 
         $mask->destroy();
+        
+        // El resto del área de la imagen debe ser transparente, pero solo aseguramos el recorte
+        // Si el formato es JPG, esto se convierte a blanco automáticamente
         
         return $imagick;
     } catch (Exception $e) {
@@ -111,21 +115,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $H = intval($payload['canvas']['height'] ?? 2400);
     $bg = $payload['canvas']['background'] ?? '#1a1a1a';
 
-    // 💡 Ajuste de fuente: Intentar Montserrat-Black, si no, usar Arial/Helvetica
-    $montserratBlackPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf'; // Ruta esperada
-    $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : null;
-    $fallbackFont = 'Arial'; // Usar una fuente sans-serif genérica de alta disponibilidad
-
-    // Función auxiliar para establecer la fuente
-    $setFont = function(ImagickDraw $draw, $isBold = true) use ($fontPath, $fallbackFont) {
-        if ($fontPath) {
-            $draw->setFont($fontPath);
-        } else {
-            // Si la ruta falla, intentamos usar una fuente del sistema sin curvas
-            $draw->setFont($fallbackFont);
-        }
-        $draw->setFontWeight($isBold ? 900 : 600);
-    };
+    // Ruta a la fuente Montserrat-Black (ajusta si es necesario)
+    $montserratBlackPath = '/usr/share/fonts/truetype/google-fonts/Montserrat-Black.ttf'; // O la ruta correcta en tu sistema
+    $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
 
     // 🖼️ Crear lienzo base con fondo que COBRE TODO
@@ -170,7 +162,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_TIMEOUT => 20,
             CURLOPT_SSL_VERIFYPEER => false,
-            // 💡 Simular un navegador web para evitar el 403 Forbidden
+            // 💡 Nuevo: Simular un navegador web para evitar el 403 Forbidden
             CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         ]);
         $data = curl_exec($ch);
@@ -187,6 +179,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         
         try {
             $m = new Imagick($tmp);
+            // Si es SVG, rasterizarlo a un tamaño razonable para que Imagick lo procese
+            if ($m->getImageFormat() === 'SVG') {
+                 // Puedes intentar establecer la resolución aquí para SVGs si da problemas de tamaño:
+                 // $m->setResolution(300, 300);
+            }
 
             if ($m->getImageWidth() === 0 || $m->getImageHeight() === 0) {
                  $m->destroy();
@@ -203,12 +200,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
-    // 📐 Zonas de diseño
+    // 📐 Zonas de diseño (REAJUSTADO: Banner y contenido superior BAJADO)
     $headerStart = 0;
-    $headerEnd = intval($H * 0.25); 
-
-    $eventInfoStart = $headerEnd + 30; 
-    $eventInfoEnd = intval($H * 0.32); 
+    $headerEnd = intval($H * 0.20); 
+    
+    $eventInfoStart = $headerEnd + 20; 
+    $eventInfoEnd = intval($H * 0.26); 
     
     $speakersStart = $eventInfoEnd;
     $speakersEnd = intval($H * 0.70); 
@@ -236,9 +233,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 🖼️ Banner de IMAGEN centrado con borde redondeado
     $bannerBoxW = intval($W * 0.65);
-    $bannerBoxH = intval($headerEnd * 0.65); 
+    $bannerBoxH = intval($headerEnd * 0.80); 
     $bannerX = intval(($W - $bannerBoxW) / 2);
-    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 30; // Desplazamiento
+    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20; 
 
     if (!empty($payload['banner_image']) && ($bannerImageUrl = $payload['banner_image']['photo'] ?? null)) {
         $bannerImage = $download_image($bannerImageUrl);
@@ -247,6 +244,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             if ($bannerImage) {
                 $cornerRadius = 40; 
                 $bannerImage = gi_round_corners($bannerImage, $cornerRadius);
+                // NO SOMBRA PARA EL BANNER
                 $img->compositeImage($bannerImage, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
                 error_log("🖼️ Banner de imagen principal agregado y redondeado.");
             }
@@ -257,9 +255,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
     }
 
-    // ✨ Logo superior derecho 
-    $logoMaxHeight = 70; 
-    $logoMaxWidth = intval($W * 0.25); 
+    // ✨ Logo superior derecho (Ajuste de posición y depuración de carga con FALLBACK de texto)
+    $logoMaxHeight = 70; // Altura máxima para el logo (más pequeño)
+    $logoMaxWidth = intval($W * 0.25); // Ancho máximo para mantener la proporción
+    $logoHeightTarget = intval($logoMaxHeight); // La altura fija para el canvas de fallback
 
     if (!empty($payload['header_logo'])) {
         $logoUrl = $payload['header_logo']['photo'] ?? null;
@@ -268,10 +267,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $headerLogo = $download_image($logoUrl);
             
             if ($headerLogo && $headerLogo->getImageWidth() > 0) {
+                // MODIFICACIÓN CLAVE: Redimensionar por ALTURA MÁXIMA fija
                 $headerLogo = safe_thumbnail($headerLogo, $logoMaxWidth, $logoMaxHeight, $logoUrl, 'logo header'); 
                 if ($headerLogo) {
-                    $x = $W - $headerLogo->getImageWidth() - 40; 
-                    $y = 15; 
+                    $x = $W - $headerLogo->getImageWidth() - 40; // Alineado a la derecha
+                    $y = 15; // Posición Y alta (cerca del borde superior)
                     $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
                     error_log("✨ Logo header agregado en esquina superior derecha con éxito. Tamaño: ".$headerLogo->getImageWidth()."x".$headerLogo->getImageHeight());
                 } else {
@@ -286,16 +286,17 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
 
-    // Fallback de Logo de texto
+    // Si el logo no se pudo cargar o no se especificó, crear un fallback de texto.
     if (!isset($headerLogo) || $headerLogo === null) {
         $fallbackLogoCanvas = new Imagick();
         $fallbackLogoCanvas->newImage($logoMaxWidth, $logoMaxHeight, new ImagickPixel('transparent'));
         $fallbackLogoCanvas->setImageFormat('png');
 
         $drawFallback = new ImagickDraw();
-        $setFont($drawFallback); // Usar fuente configurada
+        if (file_exists($fontPath)) $drawFallback->setFont($fontPath); // Usar Montserrat Black
         $drawFallback->setFillColor('#000000'); 
         $drawFallback->setFontSize(40); 
+        $drawFallback->setFontWeight(900);
         $drawFallback->setTextAlignment(Imagick::ALIGN_CENTER);
 
         $metrics = $fallbackLogoCanvas->queryFontMetrics($drawFallback, 'LOGO');
@@ -303,21 +304,22 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $textY = ($logoMaxHeight + $metrics['textHeight']) / 2; 
 
         $fallbackLogoCanvas->annotateImage($drawFallback, $textX, $textY, 0, 'LOGO');
-        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoMaxWidth - 40, 15);
+        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoMaxWidth - 40, 15); // Posición 15
         error_log("✨ Se ha usado el logo de fallback de texto 'LOGO'.");
     }
     
-    // 📅 Detalles del evento (Fuente más grande)
+    // 📅 Detalles del evento
     $draw = new ImagickDraw();
-    $setFont($draw, false); // No tan negrita
+    if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
     $draw->setFillColor('#FFFFFF');
-    $draw->setFontSize(48); // Aumentado
+    $draw->setFontSize(32);
+    $draw->setFontWeight(600);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
     $eventDetails = $payload['event_details'] ?? '6 noviembre 2026 9:00h - Silken Puerta Valencia';
-    $img->annotateImage($draw, $W / 2, $eventInfoStart + 25, 0, $eventDetails); 
-    error_log("📅 Detalles: $eventDetails (tipografía aún más grande)");
+    $img->annotateImage($draw, $W / 2, $eventInfoStart + 20, 0, $eventDetails); 
+    error_log("📅 Detalles: $eventDetails (reposicionado)");
 
-    // 👤 Speakers con recuadros redondeados (Fuente más grande)
+    // 👤 Speakers con recuadros redondeados
     $speakers = $payload['speakers'] ?? [];
     if (!empty($speakers)) {
         error_log("🎤 Procesando ".count($speakers)." speakers");
@@ -327,7 +329,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $rows = ceil($totalSpeakers / $cols);
         
         $photoW = intval($W / 4.5); 
-        $photoH = intval($photoW * 1.25); // Un poco más de altura para el texto más grande
+        $photoH = intval($photoW * 1.2); 
         $gapX = 50; 
         $gapY = 60; 
         $textHeightInternal = intval($photoH * 0.3); 
@@ -370,13 +372,14 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                 try {
                     $draw = new ImagickDraw();
-                    $setFont($draw, true); // Negrita
+                    if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
                     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
                     $draw->setFillColor('#000000'); 
-                    $draw->setFontSize(45); // Aumentado
-                    
+                    $draw->setFontSize(32); 
+                    $draw->setFontWeight(900);
+
                     $centerX = $photoW / 2;
-                    $nameY = $photoImageHeight + intval($textHeightInternal / 2) - 20; // Ajuste Y para el texto más grande
+                    $nameY = $photoImageHeight + intval($textHeightInternal / 2) - 15; 
 
                     if ($name) {
                         $speakerCanvas->annotateImage($draw, $centerX, $nameY, 0, $name);
@@ -384,11 +387,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                     if ($role) {
                         $drawRole = new ImagickDraw();
-                        $setFont($drawRole, false); // No tan negrita
+                        if (file_exists($fontPath)) $drawRole->setFont($fontPath); // Usar Montserrat Black
                         $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
                         $drawRole->setFillColor('#555555'); 
-                        $drawRole->setFontSize(35); // Aumentado
-                        $speakerCanvas->annotateImage($drawRole, $centerX, $nameY + 50, 0, $role); // Ajustada posición Y
+                        $drawRole->setFontSize(22); 
+                        $drawRole->setFontWeight(600);
+                        $speakerCanvas->annotateImage($drawRole, $centerX, $nameY + 30, 0, $role);
                     }
                 } catch (Exception $e) {
                     error_log("💥 Error texto en speaker canvas: ".$e->getMessage());
@@ -398,6 +402,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
                 if (!$speakerCanvas) continue; 
                  
+                // NO SOMBRAS
+                
                 $img->compositeImage($speakerCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
 
                 $x += $photoW + $gapX;
@@ -406,7 +412,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("🎤 Grid: $rows filas x $cols columnas");
     }
 
-    // 🏷️ Sección de Ponentes (Fuente más grande)
+    // 🏷️ Sección de Ponentes
     $logos = $payload['logos'] ?? [];
     if (!empty($logos)) {
         $sectionPonentesW = $W - 80; 
@@ -415,6 +421,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPonentesY = $sectionPonentesStart;
 
         $ponPonentessCanvas = new Imagick();
+        // Fondo blanco para la caja
         $ponPonentessCanvas->newImage($sectionPonentesW, $sectionPonentesH, new ImagickPixel('#FFFFFF'));
         $ponPonentessCanvas->setImageFormat('png');
 
@@ -424,17 +431,20 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             error_log("❌ No se pudo redondear el canvas de ponentes.");
             return new WP_REST_Response(['error'=>'Failed to round corners for ponentes section'], 500);
         }
+        
+        // ---- A partir de aquí, el canvas ya está redondeado ----
 
         $draw = new ImagickDraw();
-        $setFont($draw, true); // Negrita
+        if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
         $draw->setFillColor('#000000');
-        $draw->setFontSize(45); // Aumentado
+        $draw->setFontSize(30);
+        $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
         
-        $titlePonentesY = 55; // Ajustada posición Y
+        $titlePonentesY = 40; 
         $ponPonentessCanvas->annotateImage($draw, $sectionPonentesW / 2, $titlePonentesY, 0, 'Ponentes:');
 
-        $logosAreaTop = $titlePonentesY + 40; // Ajuste
+        $logosAreaTop = $titlePonentesY + 30; 
         $logosAreaHeight = $sectionPonentesH - $logosAreaTop - 20; 
         $logoMaxH = intval($logosAreaHeight * 0.80); 
         
@@ -460,11 +470,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $currentX += $maxW + $gapBetweenLogos;
         }
 
+        // NO SOMBRAS
         $img->compositeImage($ponPonentessCanvas, Imagick::COMPOSITE_OVER, $sectionPonentesX, $sectionPonentesY);
         error_log("💼 ".count($logos)." logos ponentes en recuadro redondeado con título encima.");
     }
 
-    // 🤝 Sección de Patrocinadores (Fuente más grande)
+    // 🤝 Sección de Patrocinadores
     $sponsors = $payload['sponsors'] ?? [];
     $closingImages = $payload['closing_images'] ?? []; 
     
@@ -475,6 +486,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPatrocinadoresY = $sectionPatrocinadoresStart;
 
         $patrocinadoresCanvas = new Imagick();
+        // Fondo blanco para la caja
         $patrocinadoresCanvas->newImage($sectionPatrocinadoresW, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF'));
         $patrocinadoresCanvas->setImageFormat('png');
 
@@ -484,13 +496,16 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             error_log("❌ No se pudo redondear el canvas de patrocinadores.");
             return new WP_REST_Response(['error'=>'Failed to round corners for patrocinadores section'], 500);
         }
+        
+        // ---- A partir de aquí, el canvas ya está redondeado ----
 
-        $currentContentY = 55; // Ajustada posición Y
+        $currentContentY = 40; 
 
         $draw = new ImagickDraw();
-        $setFont($draw, true); // Negrita
+        if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
         $draw->setFillColor('#000000');
-        $draw->setFontSize(45); // Aumentado
+        $draw->setFontSize(30);
+        $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
         $patrocinadoresCanvas->annotateImage($draw, $sectionPatrocinadoresW / 2, $currentContentY, 0, 'Patrocina:');
         $currentContentY += 60; 
@@ -554,6 +569,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             error_log("🖼️ 2 imágenes finales agregadas.");
         }
 
+        // NO SOMBRAS
         $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, $sectionPatrocinadoresX, $sectionPatrocinadoresY);
     }
 
@@ -561,6 +577,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $format = strtolower($payload['output']['format'] ?? 'jpg');
     $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_inmobiliario').'.'.$format);
 
+    // Si el formato final es JPG, componer sobre un fondo blanco final
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
         $bg_layer->newImage($W, $H, new ImagickPixel('#ffffff'));
