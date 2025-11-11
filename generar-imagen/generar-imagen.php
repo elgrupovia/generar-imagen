@@ -58,6 +58,7 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
 
 /**
  * Aplica esquinas redondeadas a una imagen Imagick.
+ * Se ha cambiado la lógica de COMPOSITE_DSTIN a COMPOSITE_COPYOPACITY para asegurar la limpieza del borde.
  */
 function gi_round_corners($imagick, $radius) {
     if (!$imagick) return $imagick;
@@ -66,19 +67,24 @@ function gi_round_corners($imagick, $radius) {
         $width = $imagick->getImageWidth();
         $height = $imagick->getImageHeight();
 
-        // Crear una máscara transparente con las esquinas redondeadas
-        $draw = new ImagickDraw();
-        $draw->setFillColor(new ImagickPixel('black')); // El color no importa, solo la forma
-        $draw->roundRectangle(0, 0, $width - 1, $height - 1, $radius, $radius);
-
+        // Crear una máscara, pero ahora la crearemos como una imagen con transparencia
         $mask = new Imagick();
         $mask->newImage($width, $height, new ImagickPixel('transparent'));
-        $mask->drawImage($draw);
-        $mask->setImageFormat('png'); // Importante para la transparencia
+        $mask->setImageFormat('png');
 
-        // Aplicar la máscara a la imagen
-        $imagick->compositeImage($mask, Imagick::COMPOSITE_DSTIN, 0, 0); 
+        // Dibujar el rectángulo redondeado en la máscara
+        $draw = new ImagickDraw();
+        $draw->setFillColor(new ImagickPixel('white')); // Color para la opacidad
+        $draw->roundRectangle(0, 0, $width - 1, $height - 1, $radius, $radius);
+        $mask->drawImage($draw);
+        
+        // 💡 Ajuste clave: Usar COMPOSITE_COPYOPACITY para transferir la opacidad de la máscara
+        // Esto asegura que la imagen original se recorte limpiamente
+        $imagick->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0); 
         $mask->destroy();
+        
+        // El resto del área de la imagen debe ser transparente, pero solo aseguramos el recorte
+        // Si el formato es JPG, esto se convierte a blanco automáticamente
         
         return $imagick;
     } catch (Exception $e) {
@@ -250,7 +256,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
 
     // ✨ Logo superior derecho (Ajuste de posición y depuración de carga con FALLBACK de texto)
-    $logoMaxHeight = 70; // <-- MODIFICADO: Altura máxima para el logo (más pequeño)
+    $logoMaxHeight = 70; // Altura máxima para el logo (más pequeño)
     $logoMaxWidth = intval($W * 0.25); // Ancho máximo para mantener la proporción
     $logoHeightTarget = intval($logoMaxHeight); // La altura fija para el canvas de fallback
 
@@ -396,7 +402,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
                 if (!$speakerCanvas) continue; 
                  
-                // ELIMINADAS LAS SOMBRAS DE SPEAKERS
+                // NO SOMBRAS
                 
                 $img->compositeImage($speakerCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
 
@@ -415,6 +421,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPonentesY = $sectionPonentesStart;
 
         $ponPonentessCanvas = new Imagick();
+        // Fondo blanco para la caja
         $ponPonentessCanvas->newImage($sectionPonentesW, $sectionPonentesH, new ImagickPixel('#FFFFFF'));
         $ponPonentessCanvas->setImageFormat('png');
 
@@ -424,6 +431,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             error_log("❌ No se pudo redondear el canvas de ponentes.");
             return new WP_REST_Response(['error'=>'Failed to round corners for ponentes section'], 500);
         }
+        
+        // ---- A partir de aquí, el canvas ya está redondeado ----
 
         $draw = new ImagickDraw();
         if (file_exists($fontPath)) $draw->setFont($fontPath); // Usar Montserrat Black
@@ -461,8 +470,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $currentX += $maxW + $gapBetweenLogos;
         }
 
-        // ELIMINADAS LAS SOMBRAS DE RECUADRO DE PONENTES
-
+        // NO SOMBRAS
         $img->compositeImage($ponPonentessCanvas, Imagick::COMPOSITE_OVER, $sectionPonentesX, $sectionPonentesY);
         error_log("💼 ".count($logos)." logos ponentes en recuadro redondeado con título encima.");
     }
@@ -478,6 +486,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sectionPatrocinadoresY = $sectionPatrocinadoresStart;
 
         $patrocinadoresCanvas = new Imagick();
+        // Fondo blanco para la caja
         $patrocinadoresCanvas->newImage($sectionPatrocinadoresW, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF'));
         $patrocinadoresCanvas->setImageFormat('png');
 
@@ -487,6 +496,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             error_log("❌ No se pudo redondear el canvas de patrocinadores.");
             return new WP_REST_Response(['error'=>'Failed to round corners for patrocinadores section'], 500);
         }
+        
+        // ---- A partir de aquí, el canvas ya está redondeado ----
 
         $currentContentY = 40; 
 
@@ -558,8 +569,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             error_log("🖼️ 2 imágenes finales agregadas.");
         }
 
-        // ELIMINADAS LAS SOMBRAS DE RECUADRO DE PATROCINADORES
-
+        // NO SOMBRAS
         $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, $sectionPatrocinadoresX, $sectionPatrocinadoresY);
     }
 
@@ -567,6 +577,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $format = strtolower($payload['output']['format'] ?? 'jpg');
     $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_inmobiliario').'.'.$format);
 
+    // Si el formato final es JPG, componer sobre un fondo blanco final
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
         $bg_layer->newImage($W, $H, new ImagickPixel('#ffffff'));
