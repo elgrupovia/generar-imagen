@@ -413,7 +413,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $cornerRadius = 30; 
                 $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
                 if (!$speakerCanvas) continue; 
-                 
+                    
                 $img->compositeImage($speakerCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
 
                 $x += $photoW + $gapX;
@@ -540,11 +540,13 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $logosAreaHeight = $blockHeight; 
             
             // **DIMENSIONES OBJETIVO PARA SPONSORS (MÁXIMO 16:9)**
-            $logoAreaTargetH = intval($logosAreaHeight * 0.70);
+            // MODIFICADO: Cambiado de 0.70 a 0.80 para igualar el tamaño con Ponentes.
+            $logoAreaTargetH = intval($logosAreaHeight * 0.80);
             $logoAreaTargetW = intval($logoAreaTargetH * (16/9)); 
 
             $totalSponsorsInRow = count($sponsors);
-            $gapBetweenSponsors = 60;
+            // MODIFICADO: Cambiado de 60 a 40 para igualar el espaciado con Ponentes.
+            $gapBetweenSponsors = 40;
             $horizontalPadding = 60; 
 
             $availableSponsorsWidth = $sectionPatrocinadoresW - ($horizontalPadding * 2);
