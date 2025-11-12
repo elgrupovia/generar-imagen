@@ -151,7 +151,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             if ($bg_image->getImageWidth() > 0 && $bg_image->getImageHeight() > 0) {
                 $scaleRatio = max($W / $bg_image->getImageWidth(), $H / $bg_image->getImageHeight());
                 $newW = (int)($bg_image->getImageWidth() * $scaleRatio);
-                $newH = (int)($bg->getImageHeight() * $scaleRatio);
+                // INICIO CORRECCIÓN DE ERROR 500
+                $newH = (int)($bg_image->getImageHeight() * $scaleRatio); 
+                // FIN CORRECCIÓN DE ERROR 500
 
                 $bg_image->scaleImage($newW, $newH);
 
@@ -558,13 +560,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $maxH = intval($maxW / (16/9));
 
             // Si la altura resultante excede la altura objetivo, ajustamos.
-            // Esto es crucial para asegurar que quepan verticalmente.
              if ($maxH > $logoAreaTargetH) {
                  $maxH = $logoAreaTargetH;
                  $maxW = intval($maxH * (16/9));
             }
             // Segunda verificación: si hay un solo logo y es muy ancho, ajustarlo al 16:9 basado en la altura.
-            // Esto previene que un logo muy ancho y corto ocupe demasiado espacio horizontal si solo hay uno.
             if ($totalSponsorsInRow === 1 && $maxW > $availableSponsorsWidth) {
                 $maxW = $availableSponsorsWidth;
                 $maxH = intval($maxW / (16/9));
@@ -599,7 +599,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
         // Las 2 Fotos Finales
         if (!empty($closingImages) && count($closingImages) >= 2) {
-            $imagesAreaHeight = $blockHeight; 
+            // El espacio para las imágenes finales es el remanente si no hay patrocinadores o el blockHeight si hay.
+            $imagesAreaHeight = empty($sponsors) ? $remainingHeight : $blockHeight; 
             $imageMaxH = intval($imagesAreaHeight * 0.80);
             
             $imageW = intval($sectionPatrocinadoresW / 2 - 80); 
