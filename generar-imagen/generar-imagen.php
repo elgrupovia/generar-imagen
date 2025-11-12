@@ -21,6 +21,7 @@ add_action('rest_api_init', function () {
 /**
  * Función de redimensionado seguro (Cover logic) - Para SPEAKERS y BANNERS.
  * Asegura que la imagen CUBRA la dimensión objetivo (puede cortar los bordes).
+ * MODIFICADO: Prioriza el recorte vertical desde la parte superior (y_offset ajustado).
  */
 function safe_thumbnail($imagick, $w, $h, $url, $context) {
     if (!$imagick) return null;
@@ -35,7 +36,17 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
                 $imagick->scaleImage($newW, $newH);
 
                 $x_offset = (int)(($newW - $w) / 2);
-                $y_offset = (int)(($newH - $h) / 2);
+                
+                // CORRECCIÓN CLAVE: Ajustamos el offset vertical.
+                // Si la imagen es para un 'speaker', intentamos recortar desde la parte superior (cabeza).
+                if ($context === 'speaker') {
+                    // Mantenemos el recorte cerca de la parte superior (0-20% de desplazamiento)
+                    $y_offset = (int)(($newH - $h) * 0.20); 
+                } else {
+                    // Para otros usos (ej. banner), centramos.
+                    $y_offset = (int)(($newH - $h) / 2); 
+                }
+                
                 $imagick->cropImage($w, $h, $x_offset, $y_offset);
                 $imagick->setImagePage($w, $h, 0, 0);
             } elseif ($w > 0) {
@@ -151,9 +162,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             if ($bg_image->getImageWidth() > 0 && $bg_image->getImageHeight() > 0) {
                 $scaleRatio = max($W / $bg_image->getImageWidth(), $H / $bg_image->getImageHeight());
                 $newW = (int)($bg_image->getImageWidth() * $scaleRatio);
-                // INICIO CORRECCIÓN DE ERROR 500
                 $newH = (int)($bg_image->getImageHeight() * $scaleRatio); 
-                // FIN CORRECCIÓN DE ERROR 500
 
                 $bg_image->scaleImage($newW, $newH);
 
@@ -342,12 +351,22 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $cols = 3;
         $rows = ceil($totalSpeakers / $cols);
         
+        // AJUSTE: TAMAÑO DE TARJETA DE SPEAKER
+        // $W es el ancho total del canvas (ej. 1600).
+        // 4.5 determina el ancho de la tarjeta (W / 4.5 = ancho). Para hacerla más ANCHA, baja el número (ej. 4.0).
         $photoW = intval($W / 4.5); 
+        // 1.2 determina la proporción de altura respecto al ancho. Para hacer la tarjeta más ALTA, sube el número (ej. 1.3).
         $photoH = intval($photoW * 1.2); 
+        
         $gapX = 50; 
         $gapY = 60; 
+        
+        // AJUSTE: PROPORCIÓN FOTO/TEXTO
+        // 0.3 (30%) es la porción de la altura total ($photoH) que ocupa el texto (fondo blanco).
+        // Para hacer la FOTO más grande (y el texto más pequeño), baja este porcentaje (ej. 0.25).
         $textHeightInternal = intval($photoH * 0.3); 
-        $photoImageHeight = $photoH - $textHeightInternal; 
+        $photoImageHeight = $photoH - $textHeightInternal; // Altura que queda para la imagen
+        // FIN AJUSTE
 
         $availableHeight = $speakersEnd - $speakersStart;
         $totalHeight = $rows * $photoH + ($rows - 1) * $gapY;
@@ -370,6 +389,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                 $photoBase = $download_image($photoUrl);
                 
+                // Usamos 'speaker' como contexto para activar el recorte superior en safe_thumbnail
                 $photoBase = safe_thumbnail($photoBase, $photoW, $photoImageHeight, $photoUrl, 'speaker');
                 if (!$photoBase) continue;
 
@@ -523,7 +543,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             return new WP_REST_Response(['error'=>'Failed to round corners for patrocinadores section'], 500);
         }
         
-        $currentContentY = 30; // Ajuste para dar más espacio vertical a los logos
+        $currentContentY = 30; 
 
         $draw = new ImagickDraw();
         if (file_exists($fontPath)) $draw->setFont($fontPath);
@@ -532,7 +552,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
         $patrocinadoresCanvas->annotateImage($draw, $sectionPatrocinadoresW / 2, $currentContentY, 0, 'Patrocina:');
-        $currentContentY += 50; // Ajustado para el espacio post-título
+        $currentContentY += 50; 
 
         $remainingHeight = $sectionPatrocinadoresH - $currentContentY - 20; 
         // Si no hay closingImages, los patrocinadores pueden usar más altura
@@ -543,8 +563,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $logosAreaHeight = $blockHeight; 
             
             // **DIMENSIONES OBJETIVO PARA SPONSORS (MÁXIMO 16:9)**
-            // Incrementamos el porcentaje para dar más altura al logo
-            $logoAreaTargetH = intval($logosAreaHeight * 0.90); // Más agresivo, 90% de la altura disponible
+            // MODIFICADO: Cambiado de 0.90 a 0.80 para igualar el tamaño con Ponentes.
+            $logoAreaTargetH = intval($logosAreaHeight * 0.80); 
             $logoAreaTargetW = intval($logoAreaTargetH * (16/9)); 
 
             $totalSponsorsInRow = count($sponsors);
