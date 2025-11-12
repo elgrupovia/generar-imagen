@@ -151,7 +151,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             if ($bg_image->getImageWidth() > 0 && $bg_image->getImageHeight() > 0) {
                 $scaleRatio = max($W / $bg_image->getImageWidth(), $H / $bg_image->getImageHeight());
                 $newW = (int)($bg_image->getImageWidth() * $scaleRatio);
-                $newH = (int)($bg_image->getImageHeight() * $scaleRatio);
+                $newH = (int)($bg->getImageHeight() * $scaleRatio);
 
                 $bg_image->scaleImage($newW, $newH);
 
@@ -521,7 +521,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             return new WP_REST_Response(['error'=>'Failed to round corners for patrocinadores section'], 500);
         }
         
-        $currentContentY = 40; 
+        $currentContentY = 30; // Ajuste para dar más espacio vertical a los logos
 
         $draw = new ImagickDraw();
         if (file_exists($fontPath)) $draw->setFont($fontPath);
@@ -530,34 +530,48 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $draw->setFontWeight(800);
         $draw->setTextAlignment(Imagick::ALIGN_CENTER);
         $patrocinadoresCanvas->annotateImage($draw, $sectionPatrocinadoresW / 2, $currentContentY, 0, 'Patrocina:');
-        $currentContentY += 60; 
+        $currentContentY += 50; // Ajustado para el espacio post-título
 
         $remainingHeight = $sectionPatrocinadoresH - $currentContentY - 20; 
-        $blockHeight = intval($remainingHeight / 2); 
+        // Si no hay closingImages, los patrocinadores pueden usar más altura
+        $blockHeight = empty($closingImages) ? $remainingHeight : intval($remainingHeight / 2); 
 
         // Logos de Patrocinadores
         if (!empty($sponsors)) {
             $logosAreaHeight = $blockHeight; 
             
             // **DIMENSIONES OBJETIVO PARA SPONSORS (MÁXIMO 16:9)**
-            // MODIFICADO: Cambiado de 0.70 a 0.80 para igualar el tamaño con Ponentes.
-            $logoAreaTargetH = intval($logosAreaHeight * 0.80);
+            // Incrementamos el porcentaje para dar más altura al logo
+            $logoAreaTargetH = intval($logosAreaHeight * 0.90); // Más agresivo, 90% de la altura disponible
             $logoAreaTargetW = intval($logoAreaTargetH * (16/9)); 
 
             $totalSponsorsInRow = count($sponsors);
-            // MODIFICADO: Cambiado de 60 a 40 para igualar el espaciado con Ponentes.
-            $gapBetweenSponsors = 40;
+            $gapBetweenSponsors = 40; // Mantener consistente con ponentes
             $horizontalPadding = 60; 
 
             $availableSponsorsWidth = $sectionPatrocinadoresW - ($horizontalPadding * 2);
             $calculatedMaxW = ($availableSponsorsWidth - ($totalSponsorsInRow - 1) * $gapBetweenSponsors) / $totalSponsorsInRow;
             
+            // Aseguramos que el ancho máximo del slot sea el menor entre el objetivo y el calculado
             $maxW = min($logoAreaTargetW, (int)$calculatedMaxW);
+            // Calculamos la altura en base a ese maxW para mantener el 16:9
             $maxH = intval($maxW / (16/9));
 
+            // Si la altura resultante excede la altura objetivo, ajustamos.
+            // Esto es crucial para asegurar que quepan verticalmente.
              if ($maxH > $logoAreaTargetH) {
                  $maxH = $logoAreaTargetH;
                  $maxW = intval($maxH * (16/9));
+            }
+            // Segunda verificación: si hay un solo logo y es muy ancho, ajustarlo al 16:9 basado en la altura.
+            // Esto previene que un logo muy ancho y corto ocupe demasiado espacio horizontal si solo hay uno.
+            if ($totalSponsorsInRow === 1 && $maxW > $availableSponsorsWidth) {
+                $maxW = $availableSponsorsWidth;
+                $maxH = intval($maxW / (16/9));
+                if ($maxH > $logoAreaTargetH) { // Re-verificar si el ajuste por ancho excedió la altura
+                    $maxH = $logoAreaTargetH;
+                    $maxW = intval($maxH * (16/9));
+                }
             }
 
 
@@ -569,10 +583,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             foreach ($sponsors as $sp) {
                 $m = $download_image($sp['photo']);
                 
-                // Usamos la nueva función CONTAIN/AJUSTAR
+                // Usamos la nueva función CONTAIN/AJUSTAR con las dimensiones maxW y maxH calculadas
                 $m = gi_safe_contain_logo($m, $maxW, $maxH, $sp['photo'], 'sponsor logo');
                 if (!$m) continue;
                 
+                // Centrar verticalmente el logo dentro de su slot
                 $logoY = $currentContentY + intval(($logosAreaHeight - $m->getImageHeight()) / 2);
                 
                 $patrocinadoresCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY)); 
