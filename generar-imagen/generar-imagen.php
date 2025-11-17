@@ -261,7 +261,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $bannerBoxW = intval($W * 0.65);
     $bannerBoxH = intval($headerEnd * 0.80); 
     $bannerX = intval(($W - $bannerBoxW) / 2);
-    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 20; 
+    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 80;
 
     if (!empty($payload['banner_image']) && ($bannerImageUrl = $payload['banner_image']['photo'] ?? null)) {
         $bannerImage = $download_image($bannerImageUrl);
@@ -345,7 +345,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $draw->setFontWeight(600);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
     $eventDetails = $payload['event_details'] ?? '6 noviembre 2026 9:00h - Silken Puerta Valencia';
-    $img->annotateImage($draw, $W / 2, $eventInfoStart + 20, 0, $eventDetails); 
+    $img->annotateImage($draw, $W / 2, $eventInfoStart +80, 0, $eventDetails); 
     error_log("📅 Detalles: $eventDetails (reposicionado)");
 
     // 👤 Speakers con recuadros redondeados (Fuentes a 32px y 22px)
