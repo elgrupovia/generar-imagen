@@ -280,9 +280,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
     }
 
-    // ✨ Logo superior derecho (CARGADO DESDE EL PLUGIN)
-        $logoMaxHeight = 70; 
-        $logoMaxWidth = intval($W * 0.25); 
+    // ✨ Logo superior derecho 
+        $logoMaxHeight = 45; 
+        $logoMaxWidth = intval($W * 0.15); 
 
         // Ruta absoluta al logo dentro del plugin
         $localLogoPath = plugin_dir_path(__FILE__) . 'LOGO_GRUPO_VIA_CMYK_BLANCO.png';
