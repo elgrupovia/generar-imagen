@@ -280,34 +280,40 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
     }
 
-    // ✨ Logo superior derecho
-    $logoMaxHeight = 70; 
-    $logoMaxWidth = intval($W * 0.25); 
+    // ✨ Logo superior derecho (CARGADO DESDE EL PLUGIN)
+        $logoMaxHeight = 70; 
+        $logoMaxWidth = intval($W * 0.25); 
 
-    if (!empty($payload['header_logo'])) {
-        $logoUrl = $payload['header_logo']['photo'] ?? null;
-        if ($logoUrl) {
-            error_log("🔍 Intentando descargar logo header desde: $logoUrl");
-            $headerLogo = $download_image($logoUrl);
-            
-            if ($headerLogo && $headerLogo->getImageWidth() > 0) {
-                $headerLogo = gi_safe_contain_logo($headerLogo, $logoMaxWidth, $logoMaxHeight, $logoUrl, 'logo header'); 
-                if ($headerLogo) {
-                    $x = $W - $headerLogo->getImageWidth() - 40;
-                    $y = 15; 
-                    $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
-                    error_log("✨ Logo header agregado en esquina superior derecha con éxito. Tamaño: ".$headerLogo->getImageWidth()."x".$headerLogo->getImageHeight());
-                } else {
-                     error_log("❌ FALLBACK: Error en redimensionado de logo descargado. Usando texto de fallback.");
-                     $headerLogo = null; 
-                }
-            } else {
-                 error_log("❌ FALLBACK: No se pudo cargar el logo desde la URL $logoUrl. Usando texto de fallback.");
+        // Ruta absoluta al logo dentro del plugin
+        $localLogoPath = plugin_dir_path(__FILE__) . 'LOGO_GRUPO_VIA_CMYK_BLANCO.png';
+
+        if (file_exists($localLogoPath)) {
+            try {
+                $headerLogo = new Imagick($localLogoPath);
+
+                // Ajustar el logo (contain) sin deformar
+                $headerLogo = gi_safe_contain_logo(
+                    $headerLogo, 
+                    $logoMaxWidth, 
+                    $logoMaxHeight, 
+                    $localLogoPath, 
+                    'logo_header_local'
+                );
+
+                // Posición
+                $x = $W - $headerLogo->getImageWidth() - 40;
+                $y = 15;
+
+                $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
+                error_log("✨ Logo local del plugin agregado correctamente.");
+
+            } catch (Exception $e) {
+                error_log("❌ Error cargando logo local: " . $e->getMessage());
             }
         } else {
-             error_log("⚠️ 'header_logo' está presente en el JSON, pero la URL de la foto está vacía. Usando texto de fallback.");
+            error_log("❌ Archivo de logo NO ENCONTRADO: $localLogoPath");
         }
-    }
+
 
     // Fallback de Logo de texto
     if (!isset($headerLogo) || $headerLogo === null) {
