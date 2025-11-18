@@ -186,6 +186,14 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
     $img->setImageFormat('png');
 
+    // 🖤 Capa negra semitransparente sobre el fondo para mejorar la lectura
+    $overlay = new Imagick();
+    $overlay->newImage($W, $H, new ImagickPixel('rgba(0,0,0,0.35)')); 
+    $overlay->setImageFormat('png');
+    $img->compositeImage($overlay, Imagick::COMPOSITE_OVER, 0, 0);
+    $overlay->destroy();
+
+
     // 🔽 Descargar imágenes (CON USER-AGENT AGREGADO)
     $download_image = function(string $url) {
         $ch = curl_init($url);
