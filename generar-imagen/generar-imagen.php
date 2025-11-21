@@ -149,7 +149,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $bg = $payload['canvas']['background'] ?? '#1a1a1a';
 
     // Ruta a la fuente Montserrat-Black (ajusta si es necesario)
-    $montserratBlackPath = plugin_dir_path(__FILE__) . 'fonts/Montserrat-Black.ttf';
+    $montserratBlackPath = plugin_dir_path(__FILE__) . '/uploads/fonts/Montserrat-Black.ttf';
     $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'; // Mantenemos el fallback si el path no es válido
 
 
