@@ -126,6 +126,44 @@ function gi_round_corners($imagick, $radius) {
     }
 }
 
+/**
+ * Envuelve el texto a una anchura máxima utilizando las métricas de Imagick para evitar el recorte.
+ * @param ImagickDraw $draw Objeto ImagickDraw con la fuente y el tamaño establecidos.
+ * @param Imagick $imagick Objeto Imagick para obtener métricas.
+ * @param string $text Texto a envolver.
+ * @param int $maxWidth Ancho máximo permitido en píxeles.
+ * @return array Líneas de texto envueltas.
+ */
+function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
+    $words = explode(' ', $text);
+    $lines = [];
+    $currentLine = '';
+
+    foreach ($words as $word) {
+        // Intentar agregar la palabra a la línea actual
+        $testLine = $currentLine . ($currentLine ? ' ' : '') . $word;
+        
+        // Obtener las métricas para verificar el ancho
+        $metrics = $imagick->queryFontMetrics($draw, $testLine);
+
+        if ($metrics['textWidth'] <= $maxWidth) {
+            $currentLine = $testLine;
+        } else {
+            // La nueva palabra no cabe, guardar la línea actual y empezar una nueva
+            if ($currentLine) {
+                $lines[] = $currentLine;
+            }
+            // Si la palabra sola ya excede el ancho, la mantenemos como línea única para evitar un bucle infinito
+            $currentLine = $word;
+        }
+    }
+    // Añadir la última línea si existe
+    if ($currentLine) {
+        $lines[] = $currentLine;
+    }
+    return $lines;
+}
+
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
     error_log('🚀 Iniciando plugin Evento Inmobiliario Pro');
@@ -152,7 +190,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $upload_dir = wp_upload_dir();
     $base_dir = $upload_dir['basedir'];
     
-    // 🚀 NUEVA RUTA: Construir la ruta al archivo .ttf dentro de wp-content/uploads/fonts/
+    // ✅ RUTA CORREGIDA: Construir la ruta al archivo .ttf dentro de wp-content/uploads/fonts/
     $montserratBlackPath = $base_dir . '/fonts/Montserrat-Black.ttf';
 
     // 🕵️‍♀️ Verificación para depuración (opcional)
@@ -357,11 +395,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("✨ Se ha usado el logo de fallback de texto 'LOGO'.");
     }
     
-    // 📅 Detalles del evento (Fuente a 32px)
+    // 📅 Detalles del evento (Fuente ajustada a 40px)
     $draw = new ImagickDraw();
     if (file_exists($fontPath)) $draw->setFont($fontPath);
     $draw->setFillColor('#FFFFFF');
-    $draw->setFontSize(40);
+    $draw->setFontSize(40); // 👈 TAMAÑO REDUCIDO
     $draw->setFontWeight(600);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
     $eventDetails = $payload['event_details'] ?? '6 noviembre 2026 9:00h - Silken Puerta Valencia';
@@ -378,18 +416,13 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $rows = ceil($totalSpeakers / $cols);
         
         // AJUSTE: TAMAÑO DE TARJETA DE SPEAKER
-        // $W es el ancho total del canvas (ej. 1600).
-        // 4.5 determina el ancho de la tarjeta (W / 4.5 = ancho). Para hacerla más ANCHA, baja el número (ej. 4.0).
         $photoW = intval($W / 4.5); 
-        // 1.2 determina la proporción de altura respecto al ancho. Para hacer la tarjeta más ALTA, sube el número (ej. 1.3).
         $photoH = intval($photoW * 1.2); 
         
         $gapX = 50; 
         $gapY = 60; 
         
         // AJUSTE: PROPORCIÓN FOTO/TEXTO
-        // 0.3 (30%) es la porción de la altura total ($photoH) que ocupa el texto (fondo blanco).
-        // Para hacer la FOTO más grande (y el texto más pequeño), baja este porcentaje (ej. 0.25).
         $textHeightInternal = intval($photoH * 0.3); 
         $photoImageHeight = $photoH - $textHeightInternal; // Altura que queda para la imagen
         // FIN AJUSTE
@@ -429,6 +462,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $whiteBg->newImage($photoW, $textHeightInternal, new ImagickPixel('#FFFFFF'));
                 $whiteBg->setImageFormat('png');
                 $speakerCanvas->compositeImage($whiteBg, Imagick::COMPOSITE_OVER, 0, $photoImageHeight); 
+                $whiteBg->destroy();
+                $photoBase->destroy();
 
                 try {
                     $draw = new ImagickDraw();
@@ -452,7 +487,18 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                         $drawRole->setFillColor('#555555'); 
                         $drawRole->setFontSize(22); 
                         $drawRole->setFontWeight(600);
-                        $speakerCanvas->annotateImage($drawRole, $centerX, $nameY + 30, 0, $role);
+
+                        // --- INICIO AJUSTE DE LÍNEA: Rol ---
+                        $maxWidthForText = $photoW - 30; // 15px de margen a cada lado
+                        $roleLines = gi_word_wrap_text($drawRole, $speakerCanvas, $role, $maxWidthForText);
+                        
+                        $lineHeight = 25; // Espacio vertical entre líneas
+                        $roleYStart = $nameY + 30; // Posición inicial
+                        
+                        foreach ($roleLines as $i => $line) {
+                            $speakerCanvas->annotateImage($drawRole, $centerX, $roleYStart + ($i * $lineHeight), 0, $line);
+                        }
+                        // --- FIN AJUSTE DE LÍNEA: Rol ---
                     }
                 } catch (Exception $e) {
                     error_log("💥 Error texto en speaker canvas: ".$e->getMessage());
@@ -461,8 +507,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $cornerRadius = 30; 
                 $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
                 if (!$speakerCanvas) continue; 
-                    
+                
                 $img->compositeImage($speakerCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
+                $speakerCanvas->destroy();
 
                 $x += $photoW + $gapX;
             }
