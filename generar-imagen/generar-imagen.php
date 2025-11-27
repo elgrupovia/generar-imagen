@@ -361,7 +361,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $draw = new ImagickDraw();
     if (file_exists($fontPath)) $draw->setFont($fontPath);
     $draw->setFillColor('#FFFFFF');
-    $draw->setFontSize(50);
+    $draw->setFontSize(40);
     $draw->setFontWeight(600);
     $draw->setTextAlignment(Imagick::ALIGN_CENTER);
     $eventDetails = $payload['event_details'] ?? '6 noviembre 2026 9:00h - Silken Puerta Valencia';
