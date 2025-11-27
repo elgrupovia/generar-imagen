@@ -148,10 +148,22 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $H = intval($payload['canvas']['height'] ?? 2400);
     $bg = $payload['canvas']['background'] ?? '#1a1a1a';
 
-    // Ruta a la fuente Montserrat-Black (ajusta si es necesario)
-    $montserratBlackPath = plugin_dir_path(__FILE__) . '/uploads/fonts/Montserrat-Black.ttf';
-    $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'; // Mantenemos el fallback si el path no es válido
+    // Obtener la información del directorio de 'uploads' de WordPress
+    $upload_dir = wp_upload_dir();
+    $base_dir = $upload_dir['basedir'];
+    
+    // 🚀 NUEVA RUTA: Construir la ruta al archivo .ttf dentro de wp-content/uploads/fonts/
+    $montserratBlackPath = $base_dir . '/fonts/Montserrat-Black.ttf';
 
+    // 🕵️‍♀️ Verificación para depuración (opcional)
+    if (!file_exists($montserratBlackPath)) {
+        error_log("❌ DEBUG: Montserrat-Black.ttf NO ENCONTRADA en la ruta: " . $montserratBlackPath);
+    } else {
+         error_log("✅ DEBUG: Montserrat-Black.ttf ENCONTRADA en la ruta: " . $montserratBlackPath);
+    }
+    
+    // Asignar $fontPath (usa el archivo si existe, sino usa el fallback)
+    $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
     // 🖼️ Crear lienzo base con fondo que COBRE TODO
     $img = new Imagick();
