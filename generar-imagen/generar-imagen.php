@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.7.0
+ * Version: 2.8.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - Sin Texto en Banner y con Logo en Speakers');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjetas Blancas');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -146,7 +146,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con Fotos Cuadradas, Sin Overlay, Sin Título de Banner y con Logo de Speaker');
+    error_log('🚀 Ejecutando con FIX para Tarjetas de Speakers Blancas');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -217,9 +217,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // --- DATOS DEL PAYLOAD ---
     $bannerImageUrl = $payload['banner_image']['photo'] ?? null;
-    // Eliminación del texto del banner, ya que se asume que viene en la imagen.
-    // $bannerTitle = $payload['banner_title'] ?? 'Evento Corporativo Inmobiliario'; 
-    // $eventDetails = $payload['event_details'] ?? '6 NOVIEMBRE 2026 | 9:00H | SILKEN PUERTA VALENCIA';
     $speakers = $payload['speakers'] ?? [];
     $totalSpeakers = count($speakers);
     $cols = 3;
@@ -247,9 +244,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
              error_log("⚠️ Fallback: Banner de color sólido aplicado.");
         }
     }
-
-    // ELIMINACIÓN DEL TEXTO DEL BANNER
-    // La zona donde se dibujaba el título y los detalles se omite para respetar la petición.
 
 
     // --- 2. SECCIÓN DE TARJETAS Y SPONSORS (65% H) ---
@@ -282,7 +276,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $nameFontSize = 40; 
     $roleFontSize = 25; 
     
-    $logoMaxH = intval($cardH * 0.15); // Altura máxima para el logo (84px)
+    $logoMaxH = intval($cardH * 0.10); // Altura máxima para el logo (56px) - Ajustado ligeramente
     
     $internalPadding = 30; // Para el espacio interior del texto
     $shadowMargin = 15;
@@ -297,7 +291,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             if (!$sp) continue;
 
             $cardCanvas = new Imagick();
-            // Fondo de las tarjetas BLANCO
+            // Aseguramos que el fondo de la tarjeta sea BLANCO
             $cardCanvas->newImage($cardW, $cardH, new ImagickPixel('#FFFFFF'));
             $cardCanvas->setImageFormat('png');
             
@@ -305,24 +299,30 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cornerRadius = 20; 
             $cardCanvas = gi_round_corners($cardCanvas, $cornerRadius);
 
+            // Crear un canvas para la sombra y luego componer la tarjeta en él
             $cardWithShadow = new Imagick();
             $cardWithShadow->newImage($cardW + $shadowMargin*2, $cardH + $shadowMargin*2, new ImagickPixel('transparent'));
             $cardWithShadow->setImageFormat('png');
 
-            $cardCanvas->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)'));
+            // Aplicar la sombra a la tarjeta de contenido, no al canvas de sombra
+            $cardCanvas->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)')); // Fondo transparente para la sombra
             $cardCanvas->shadowImage(80, 5, 0, 0); 
 
+            // Componer la tarjeta (con su sombra) en el canvas de sombra
             $cardWithShadow->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
-            $cardCanvas->destroy();
+            $cardCanvas->destroy(); // Destruimos el canvas original, ahora trabajamos con cardWithShadow
             $cardCanvas = $cardWithShadow; 
             
             $x = $gridXStart + $c * ($cardW + $gapX) - $shadowMargin; 
             $y = $baseY - $shadowMargin;
             
             // --- CONTENIDO INTERNO DE LA TARJETA ---
-            $internalCanvas = new Imagick();
-            $internalCanvas->newImage($cardW, $cardH, new ImagickPixel('transparent'));
-            $internalCanvas->setImageFormat('png');
+            // Este canvas será el que contenga la foto, nombre, rol y logo.
+            // Se compondrá sobre el fondo blanco inicial de la tarjeta.
+            $internalContentCanvas = new Imagick();
+            $internalContentCanvas->newImage($cardW, $cardH, new ImagickPixel('transparent'));
+            $internalContentCanvas->setImageFormat('png');
+
 
             $currentY = $photoMarginTop; // 28px
             
@@ -334,7 +334,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $photoBase = safe_thumbnail($photoBase, $photoSize, $photoSize, $photoUrl, 'speaker');
                 if ($photoBase) {
                     $photoX = ($cardW - $photoSize) / 2;
-                    $internalCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), intval($currentY));
+                    $internalContentCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), intval($currentY));
                     $photoBase->destroy();
                     $currentY += $photoSize + 25; // Espacio después de la foto
                 }
@@ -349,9 +349,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $drawName->setTextAlignment(Imagick::ALIGN_CENTER);
             $name = trim($sp['name'] ?? 'Nombre Apellido');
             
-            $metricsName = $internalCanvas->queryFontMetrics($drawName, $name);
+            $metricsName = $internalContentCanvas->queryFontMetrics($drawName, $name);
             $nameY = $currentY + $metricsName['textHeight'] / 2;
-            $internalCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
+            $internalContentCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
             $currentY += $metricsName['textHeight'] + 10; // Espacio después del nombre
 
             // ✍️ Rol (Ocupación)
@@ -363,16 +363,16 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
             $role = trim($sp['role'] ?? 'Cargo en la Empresa');
             
-            $roleLines = gi_word_wrap_text($drawRole, $internalCanvas, $role, $cardW - $internalPadding * 2);
+            $roleLines = gi_word_wrap_text($drawRole, $internalContentCanvas, $role, $cardW - $internalPadding * 2);
             $lineHeight = $roleFontSize + 5; 
             
             foreach ($roleLines as $i => $line) {
-                $internalCanvas->annotateImage($drawRole, $cardW / 2, $currentY + ($i * $lineHeight), 0, $line);
+                $internalContentCanvas->annotateImage($drawRole, $cardW / 2, $currentY + ($i * $lineHeight), 0, $line);
             }
             $currentY += count($roleLines) * $lineHeight + 20; // Espacio después del rol
 
             
-            // 🏢 Logo de la Empresa (Nuevo)
+            // 🏢 Logo de la Empresa
             $logoUrl = $sp['logo'] ?? null;
             $logoBase = $download_image($logoUrl);
 
@@ -383,26 +383,27 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                     $logoH = $logoBase->getImageHeight();
                     
                     // Calcular Y para centrar el logo en el espacio restante de la tarjeta
-                    $remainingSpace = $cardH - $currentY - $photoMarginTop; // photoMarginTop (28px) como padding inferior
+                    $remainingSpace = $cardH - $currentY - ($photoMarginTop/2); // Usar la mitad del margen superior como padding inferior
                     $logoY = $currentY + ($remainingSpace - $logoH) / 2;
                     
                     $logoX = ($cardW - $logoW) / 2;
-                    $internalCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
+                    $internalContentCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
                     $logoBase->destroy();
                 }
             }
 
 
-            // 🖼️ Componer el contenido en el canvas con sombra
-            $cardCanvas->compositeImage($internalCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
-            $internalCanvas->destroy();
+            // Componemos el contenido interno (foto, nombre, rol, logo) en la tarjeta con sombra
+            // La tarjeta (cardCanvas) ya tiene su fondo blanco y sombra.
+            $cardCanvas->compositeImage($internalContentCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
+            $internalContentCanvas->destroy();
 
-            // 🖼️ Componer la tarjeta con sombra en el lienzo principal
+            // 🖼️ Componer la tarjeta completa (fondo blanco, contenido y sombra) en el lienzo principal
             $img->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
             $cardCanvas->destroy();
         }
     }
-    error_log("🎤 Grid de tarjetas 2x3 generado con logos de speakers (NUEVO).");
+    error_log("🎤 Grid de tarjetas 2x3 generado con logos de speakers (FIX BLANCO aplicado).");
 
     // --- 2b. BARRA DE SPONSORS (Aprox. 20% de la sección 65%) ---
     $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 312px
@@ -489,7 +490,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v5.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v6.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -518,7 +519,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V5): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V6): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
