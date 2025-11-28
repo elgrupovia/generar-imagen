@@ -517,7 +517,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         
         // Si hay espacio restante, centrar la fila de logos
         $finalLogoW = $currentX - $marginLR - $logoSpacing; // Ancho total ocupado por logos
-        $spaceToShift = ($W - $2 * $marginLR - $finalLogoW) / 2;
+        $spaceToShift = ($W - 2 * $marginLR - $finalLogoW) / 2;
         
         // Crear un canvas para mover los logos
         $finalLogosCanvas = new Imagick();
