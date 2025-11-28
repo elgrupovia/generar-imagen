@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.16.0
+ * Version: 2.17.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjeta Horizontal de Sponsors (Sin Título y Logos Grandes)');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Logo Corporativo Arriba Derecha');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -39,7 +39,7 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
                 if ($context === 'speaker' || $context === 'speaker_circular') {
                     $y_offset = (int)(($newH - $h) * 0.20); 
                 } else {
-                    $y_offset = (int)(($newW - $w) / 2); 
+                    $y_offset = (int)(($newH - $h) / 2); 
                 }
                 
                 $imagick->cropImage($w, $h, $x_offset, $y_offset);
@@ -223,6 +223,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $rows = 2; 
     $maxSpeakers = $cols * $rows; 
 
+    // --- Dimensiones Comunes ---
+    $marginLR = intval($W * 0.05); // 80px
+    $internalPadding = 30; // 30px
+    $shadowMargin = 15; // 15px
 
     // --- 1. BANNER SUPERIOR (35% H) ---
     $bannerH = intval($H * 0.35); // 840px
@@ -244,6 +248,42 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
              error_log("⚠️ Fallback: Banner de color sólido aplicado.");
         }
     }
+    
+    // --- 1b. LOGO CORPORATIVO (Top-Right) ---
+    $logoFileName = 'LOGO_GRUPO_VIA_CMYK_BLANCO.png';
+    $logoCorpPath = dirname(__FILE__) . '/' . $logoFileName;
+    $logoCorp = null;
+
+    if (file_exists($logoCorpPath)) {
+        try {
+            $logoCorp = new Imagick($logoCorpPath);
+            
+            // Dimensionamiento
+            $logoCorpMaxW = intval($W * 0.25);
+            $logoCorpMaxH = intval($bannerH * 0.20);
+            
+            $logoCorp = gi_safe_contain_logo($logoCorp, $logoCorpMaxW, $logoCorpMaxH, $logoCorpPath, 'corporate_logo');
+            
+            if ($logoCorp) {
+                $logoW = $logoCorp->getImageWidth();
+                $logoH = $logoCorp->getImageHeight();
+                
+                // Posicionamiento (Margen derecho $marginLR, Margen superior $internalPadding)
+                $logoX = $W - $marginLR - $logoW; 
+                $logoY = $internalPadding; 
+                
+                $img->compositeImage($logoCorp, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
+                $logoCorp->destroy();
+                error_log("🏢 Logo corporativo compuesto en la esquina superior derecha.");
+            }
+        } catch (Exception $e) {
+            error_log("❌ Error cargando/componiendo logo corporativo: " . $e->getMessage());
+            $logoCorp = null;
+        }
+    } else {
+        error_log("⚠️ Logo corporativo no encontrado en la ruta esperada: " . $logoCorpPath);
+    }
+    // --- FIN LOGO CORPORATIVO ---
 
 
     // --- 2. SECCIÓN DE TARJETAS Y SPONSORS (65% H) ---
@@ -253,7 +293,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // --- 2a. GRID DE TARJETAS (Aprox. 80% de la sección 65%) ---
     $gridAreaH = intval($cardsSectionH * 0.80); // 1248px
     
-    $marginLR = intval($W * 0.05); // 80px
     $gridMarginTB = intval($gridAreaH * 0.03); // 37px
     
     $gridW = $W - 2 * $marginLR; // 1440px
@@ -273,14 +312,13 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $gridYStart = $bannerH - $overlapAmount; // 840px - 28px = 812px
 
     
-    // --- Dimensiones Internas Comunes ---
+    // --- Dimensiones Internas Comunes para Speakers ---
     $photoSize = intval($cardW * 0.70); // Foto CUADRADA
     $photoMarginTop = intval($cardH * 0.05); 
     $nameFontSize = 40; 
     $roleFontSize = 25; 
-    $logoMaxH = intval($cardH * 0.10); 
-    $internalPadding = 30; 
-    $shadowMargin = 15; 
+    $speakerLogoMaxH = intval($cardH * 0.10); // Renombrado para evitar conflicto
+    
 
     $index = 0;
     for ($r = 0; $r < $rows; $r++) {
@@ -379,7 +417,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $logoBase = $download_image($logoUrl);
 
             if ($logoBase) {
-                $logoBase = gi_safe_contain_logo($logoBase, $cardW - $internalPadding * 2, $logoMaxH, $logoUrl, 'speaker_logo');
+                $logoBase = gi_safe_contain_logo($logoBase, $cardW - $internalPadding * 2, $speakerLogoMaxH, $logoUrl, 'speaker_logo');
                 if ($logoBase) {
                     $logoW = $logoBase->getImageWidth();
                     $logoH = $logoBase->getImageHeight();
@@ -406,7 +444,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto de elevación mínima (5%).");
 
 
-    // --- 2b. BARRA DE SPONSORS (Nueva Tarjeta Horizontal Elevada, Sin Título y Logos Grandes) ---
+    // --- 2b. BARRA DE SPONSORS (Horizontal, Sin Título y Logos Grandes) ---
 
     // 1. Calcular posición Y: Justo después de la última fila de speakers + un gap
     $lastCardRowYEnd = $gridYStart + ($rows - 1) * ($cardH + $gapY) + $cardH;
@@ -445,7 +483,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $patrocinadoresCard->destroy();
     $sponsorCanvas = $cardContainer; 
 
-    // --- 2.2. CONTENIDO INTERNO: Solo Logos (Aprovechando el espacio) ---
+    // --- 2.2. CONTENIDO INTERNO: Solo Logos (Grandes) ---
     $contentCanvas = new Imagick();
     $contentCanvas->newImage($sponsorCardW, $sponsorCardH, new ImagickPixel('transparent'));
     $contentCanvas->setImageFormat('png');
@@ -453,14 +491,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     $sponsorLogos = array_merge($payload['logos'] ?? [], $payload['sponsors'] ?? []);
     
-    // ✍️ Título "Sponsors:" -> BLOQUE ELIMINADO
-
     // Área para los Logos: Ocupa casi todo el espacio vertical.
     $logosYStart = $internalPadding; // 30px (desde el borde superior)
-    $logosAreaH = $sponsorCardH - 2 * $internalPadding; // 200 - 60 = 140px (Más grandes)
+    $logosAreaH = $sponsorCardH - 2 * $internalPadding; // 200 - 60 = 140px (Máxima altura para logos)
     $logosAreaW = $sponsorCardW - 2 * $internalPadding;
 
-    $logoMaxH = $logosAreaH; // Máxima altura permitida para cada logo
+    $logoMaxH = $logosAreaH; 
     $logoSpacing = 40; 
     
     $logosToCompose = [];
@@ -474,7 +510,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
         $logoBase = $download_image($logoUrl);
         if ($logoBase) {
-            // Se usa el nuevo y mayor logoMaxH (140px)
             $logoBase = gi_safe_contain_logo($logoBase, $logosAreaW, $logoMaxH, $logoUrl, 'sponsor_logo');
             if ($logoBase) {
                 $logoW = $logoBase->getImageWidth();
