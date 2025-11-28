@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.6.0
+ * Version: 2.7.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional con Fotos Cuadradas y Sin Overlay');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - Sin Texto en Banner y con Logo en Speakers');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -117,37 +117,6 @@ function gi_round_corners($imagick, $radius) {
     }
 }
 
-// La función gi_circular_mask se mantiene, pero ya NO se llama para los speakers.
-function gi_circular_mask($imagick) {
-    if (!$imagick) return $imagick;
-
-    try {
-        $width = $imagick->getImageWidth();
-        $height = $imagick->getImageHeight();
-        $radius = min($width, $height) / 2;
-        $centerX = $width / 2;
-        $centerY = $height / 2;
-
-        $mask = new Imagick();
-        $mask->newImage($width, $height, new ImagickPixel('transparent'));
-        $mask->setImageFormat('png');
-
-        $draw = new ImagickDraw();
-        $draw->setFillColor(new ImagickPixel('white'));
-        $draw->circle($centerX, $centerY, $centerX, $centerY - $radius);
-        $mask->drawImage($draw);
-        
-        $imagick->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0); 
-        $mask->destroy();
-        
-        return $imagick;
-    } catch (Exception $e) {
-        error_log("❌ Error al aplicar máscara circular: ".$e->getMessage());
-        return $imagick;
-    }
-}
-
-
 /**
  * Envuelve el texto a una anchura máxima.
  */
@@ -177,7 +146,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con Fotos Cuadradas y Sin Overlay en Banner');
+    error_log('🚀 Ejecutando con Fotos Cuadradas, Sin Overlay, Sin Título de Banner y con Logo de Speaker');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -248,8 +217,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // --- DATOS DEL PAYLOAD ---
     $bannerImageUrl = $payload['banner_image']['photo'] ?? null;
-    $bannerTitle = $payload['banner_title'] ?? 'Evento Corporativo Inmobiliario'; 
-    $eventDetails = $payload['event_details'] ?? '6 NOVIEMBRE 2026 | 9:00H | SILKEN PUERTA VALENCIA';
+    // Eliminación del texto del banner, ya que se asume que viene en la imagen.
+    // $bannerTitle = $payload['banner_title'] ?? 'Evento Corporativo Inmobiliario'; 
+    // $eventDetails = $payload['event_details'] ?? '6 NOVIEMBRE 2026 | 9:00H | SILKEN PUERTA VALENCIA';
     $speakers = $payload['speakers'] ?? [];
     $totalSpeakers = count($speakers);
     $cols = 3;
@@ -265,16 +235,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $bg_image = $download_image($bannerImageUrl);
         if ($bg_image) {
             $bg_image = safe_thumbnail($bg_image, $W, $bannerH, $bannerImageUrl, 'banner_top');
-            
-            // ELIMINACIÓN DEL OVERLAY NEGRO
-            // $overlay = new Imagick();
-            // $overlay->newImage($W, $bannerH, new ImagickPixel('rgba(0,0,0,0.40)')); 
-            // $bg_image->compositeImage($overlay, Imagick::COMPOSITE_OVER, 0, 0);
-            // $overlay->destroy();
-            
             $img->compositeImage($bg_image, Imagick::COMPOSITE_OVER, 0, $bannerY);
             $bg_image->destroy();
-            error_log("🖼️ Banner de imagen de fondo aplicado (sin overlay).");
+            error_log("🖼️ Banner de imagen de fondo aplicado (sin overlay ni texto superpuesto).");
 
         } else {
              $solidBanner = new Imagick();
@@ -285,32 +248,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
 
-    // ✍️ Texto del Banner (Título y Detalles) - Adaptado para contraste sin overlay
-    $drawTitle = new ImagickDraw();
-    if (file_exists($fontPath)) $drawTitle->setFont($fontPath);
-    $drawTitle->setFillColor('#FFFFFF'); // Mantener blanco si la imagen de fondo es oscura
-    $drawTitle->setFontSize(70); 
-    $drawTitle->setFontWeight(900);
-    $drawTitle->setTextAlignment(Imagick::ALIGN_CENTER);
-
-    $metricsTitle = $img->queryFontMetrics($drawTitle, $bannerTitle);
-    
-    $drawDetails = new ImagickDraw();
-    if (file_exists($fontPath)) $drawDetails->setFont($fontPath);
-    $drawDetails->setFillColor('#CCCCCC'); // Mantener gris claro si la imagen de fondo es oscura
-    $drawDetails->setFontSize(35); 
-    $drawDetails->setFontWeight(600);
-    $drawDetails->setTextAlignment(Imagick::ALIGN_CENTER);
-    
-    $metricsDetails = $img->queryFontMetrics($drawDetails, $eventDetails);
-
-    $totalTextHeight = $metricsTitle['textHeight'] + 20 + $metricsDetails['textHeight']; 
-    $titleY = $bannerY + ($bannerH / 2) - ($totalTextHeight / 2) + $metricsTitle['textHeight'] - 10;
-    
-    $img->annotateImage($drawTitle, $W / 2, $titleY, 0, $bannerTitle);
-    $detailsY = $titleY + 20 + 5; 
-    $img->annotateImage($drawDetails, $W / 2, $detailsY, 0, $eventDetails);
-    error_log("✍️ Título y detalles superpuestos centrados en el banner (sin overlay).");
+    // ELIMINACIÓN DEL TEXTO DEL BANNER
+    // La zona donde se dibujaba el título y los detalles se omite para respetar la petición.
 
 
     // --- 2. SECCIÓN DE TARJETAS Y SPONSORS (65% H) ---
@@ -337,12 +276,15 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     
     // --- Dimensiones Internas de la Tarjeta ---
-    $photoSize = intval($cardW * 0.70); // **Foto CUADRADA, 70% del ancho de la tarjeta** (313px)
-    $photoMarginTop = intval($cardH * 0.05); // 5% de la altura (28px), para dar espacio arriba
+    $photoSize = intval($cardW * 0.70); // Foto CUADRADA, 70% del ancho (313px)
+    $photoMarginTop = intval($cardH * 0.05); // 5% de la altura (28px)
     
     $nameFontSize = 40; 
     $roleFontSize = 25; 
-    $internalPadding = 30;
+    
+    $logoMaxH = intval($cardH * 0.15); // Altura máxima para el logo (84px)
+    
+    $internalPadding = 30; // Para el espacio interior del texto
     $shadowMargin = 15;
 
     $index = 0;
@@ -355,6 +297,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             if (!$sp) continue;
 
             $cardCanvas = new Imagick();
+            // Fondo de las tarjetas BLANCO
             $cardCanvas->newImage($cardW, $cardH, new ImagickPixel('#FFFFFF'));
             $cardCanvas->setImageFormat('png');
             
@@ -388,11 +331,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $photoBase = $download_image($photoUrl);
 
             if ($photoBase) {
-                // Usamos safe_thumbnail para que la imagen cubra el cuadrado y se recorte si es necesario.
                 $photoBase = safe_thumbnail($photoBase, $photoSize, $photoSize, $photoUrl, 'speaker');
                 if ($photoBase) {
-                    // YA NO SE APLICA LA MASCARA CIRCULAR:
-                    // $photoBase = gi_circular_mask($photoBase); 
                     $photoX = ($cardW - $photoSize) / 2;
                     $internalCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), intval($currentY));
                     $photoBase->destroy();
@@ -412,8 +352,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $metricsName = $internalCanvas->queryFontMetrics($drawName, $name);
             $nameY = $currentY + $metricsName['textHeight'] / 2;
             $internalCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
-            $currentY += $metricsName['textHeight'] + 15; // Espacio después del nombre
-            
+            $currentY += $metricsName['textHeight'] + 10; // Espacio después del nombre
+
             // ✍️ Rol (Ocupación)
             $drawRole = new ImagickDraw();
             if (file_exists($fontPath)) $drawRole->setFont($fontPath);
@@ -429,6 +369,29 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             foreach ($roleLines as $i => $line) {
                 $internalCanvas->annotateImage($drawRole, $cardW / 2, $currentY + ($i * $lineHeight), 0, $line);
             }
+            $currentY += count($roleLines) * $lineHeight + 20; // Espacio después del rol
+
+            
+            // 🏢 Logo de la Empresa (Nuevo)
+            $logoUrl = $sp['logo'] ?? null;
+            $logoBase = $download_image($logoUrl);
+
+            if ($logoBase) {
+                $logoBase = gi_safe_contain_logo($logoBase, $cardW - $internalPadding * 2, $logoMaxH, $logoUrl, 'speaker_logo');
+                if ($logoBase) {
+                    $logoW = $logoBase->getImageWidth();
+                    $logoH = $logoBase->getImageHeight();
+                    
+                    // Calcular Y para centrar el logo en el espacio restante de la tarjeta
+                    $remainingSpace = $cardH - $currentY - $photoMarginTop; // photoMarginTop (28px) como padding inferior
+                    $logoY = $currentY + ($remainingSpace - $logoH) / 2;
+                    
+                    $logoX = ($cardW - $logoW) / 2;
+                    $internalCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
+                    $logoBase->destroy();
+                }
+            }
+
 
             // 🖼️ Componer el contenido en el canvas con sombra
             $cardCanvas->compositeImage($internalCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
@@ -439,7 +402,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cardCanvas->destroy();
         }
     }
-    error_log("🎤 Grid de tarjetas 2x3 generado con fotos cuadradas y más grandes.");
+    error_log("🎤 Grid de tarjetas 2x3 generado con logos de speakers (NUEVO).");
 
     // --- 2b. BARRA DE SPONSORS (Aprox. 20% de la sección 65%) ---
     $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 312px
@@ -526,7 +489,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v4.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v5.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -555,7 +518,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V5): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
