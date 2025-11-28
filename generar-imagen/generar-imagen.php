@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño moderno
- * Version: 2.0.0
+ * Version: 2.1.0
  * Author: GrupoVia
  */
 
@@ -19,8 +19,7 @@ add_action('rest_api_init', function () {
 });
 
 /**
- * Función de redimensionado seguro (Cover logic) - Para SPEAKERS y BANNERS.
- * Asegura que la imagen CUBRA la dimensión objetivo (puede cortar los bordes).
+ * Función de redimensionado seguro (Cover logic) - Asegura que la imagen CUBRA la dimensión objetivo (puede cortar los bordes).
  * MODIFICADO: Prioriza el recorte vertical desde la parte superior (y_offset ajustado).
  */
 function safe_thumbnail($imagick, $w, $h, $url, $context) {
@@ -37,7 +36,6 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
 
                 $x_offset = (int)(($newW - $w) / 2);
                 
-                // CORRECCIÓN CLAVE: Ajustamos el offset vertical.
                 // Si la imagen es para un 'speaker', intentamos recortar desde la parte superior (cabeza).
                 if ($context === 'speaker') {
                     // Mantenemos el recorte cerca de la parte superior (0-20% de desplazamiento)
@@ -127,6 +125,39 @@ function gi_round_corners($imagick, $radius) {
 }
 
 /**
+ * Aplica una máscara circular a una imagen.
+ */
+function gi_circular_mask($imagick) {
+    if (!$imagick) return $imagick;
+
+    try {
+        $width = $imagick->getImageWidth();
+        $height = $imagick->getImageHeight();
+        $radius = min($width, $height) / 2;
+        $centerX = $width / 2;
+        $centerY = $height / 2;
+
+        $mask = new Imagick();
+        $mask->newImage($width, $height, new ImagickPixel('transparent'));
+        $mask->setImageFormat('png');
+
+        $draw = new ImagickDraw();
+        $draw->setFillColor(new ImagickPixel('white'));
+        $draw->circle($centerX, $centerY, $centerX, $centerY - $radius);
+        $mask->drawImage($draw);
+        
+        $imagick->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0); 
+        $mask->destroy();
+        
+        return $imagick;
+    } catch (Exception $e) {
+        error_log("❌ Error al aplicar máscara circular: ".$e->getMessage());
+        return $imagick;
+    }
+}
+
+
+/**
  * Envuelve el texto a una anchura máxima utilizando las métricas de Imagick para evitar el recorte.
  * @param ImagickDraw $draw Objeto ImagickDraw con la fuente y el tamaño establecidos.
  * @param Imagick $imagick Objeto Imagick para obtener métricas.
@@ -166,7 +197,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Iniciando plugin Evento Inmobiliario Pro');
+    error_log('🚀 Iniciando plugin Evento Inmobiliario Pro - Nuevo Diseño');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -182,66 +213,21 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return new WP_REST_Response(['error'=>'No payload'], 400);
     }
 
+    // --- CONFIGURACIÓN DE LIENZO Y FUENTE ---
     $W = intval($payload['canvas']['width'] ?? 1600);
     $H = intval($payload['canvas']['height'] ?? 2400);
-    $bg = $payload['canvas']['background'] ?? '#1a1a1a';
+    $bg = $payload['canvas']['background'] ?? '#f0f0f0'; // Fondo por defecto más claro para el nuevo diseño
 
-    // Obtener la información del directorio de 'uploads' de WordPress
     $upload_dir = wp_upload_dir();
     $base_dir = $upload_dir['basedir'];
-    
-    // ✅ RUTA CORREGIDA: Construir la ruta al archivo .ttf dentro de wp-content/uploads/fonts/
     $montserratBlackPath = $base_dir . '/fonts/Montserrat-Black.ttf';
-
-    // 🕵️‍♀️ Verificación para depuración (opcional)
-    if (!file_exists($montserratBlackPath)) {
-        error_log("❌ DEBUG: Montserrat-Black.ttf NO ENCONTRADA en la ruta: " . $montserratBlackPath);
-    } else {
-         error_log("✅ DEBUG: Montserrat-Black.ttf ENCONTRADA en la ruta: " . $montserratBlackPath);
-    }
-    
-    // Asignar $fontPath (usa el archivo si existe, sino usa el fallback)
     $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+
 
     // 🖼️ Crear lienzo base con fondo que COBRE TODO
     $img = new Imagick();
-    if (filter_var($bg, FILTER_VALIDATE_URL)) {
-        $bg_image = new Imagick();
-        try {
-            $bg_image->readImage($bg);
-            if ($bg_image->getImageWidth() > 0 && $bg_image->getImageHeight() > 0) {
-                $scaleRatio = max($W / $bg_image->getImageWidth(), $H / $bg_image->getImageHeight());
-                $newW = (int)($bg_image->getImageWidth() * $scaleRatio);
-                $newH = (int)($bg_image->getImageHeight() * $scaleRatio); 
-
-                $bg_image->scaleImage($newW, $newH);
-
-                $x_offset = (int)(($newW - $W) / 2);
-                $y_offset = (int)(($newH - $H) / 2);
-                $bg_image->cropImage($W, $H, $x_offset, $y_offset);
-
-                $img = $bg_image;
-                $img->blurImage(2, 1);
-                error_log("🖼️ Fondo aplicado, escalado y difuminado para cubrir todo el lienzo");
-            } else {
-                 error_log("⚠️ Imagen de fondo inválida o no disponible: $bg. Usando color sólido.");
-                 $img->newImage($W, $H, new ImagickPixel($bg));
-            }
-        } catch (Exception $e) {
-            error_log("❌ Error leyendo imagen de fondo: ".$e->getMessage());
-            $img->newImage($W, $H, new ImagickPixel($bg));
-        }
-    } else {
-        $img->newImage($W, $H, new ImagickPixel($bg));
-    }
+    $img->newImage($W, $H, new ImagickPixel($bg));
     $img->setImageFormat('png');
-
-    // 🖤 Capa negra semitransparente sobre el fondo para mejorar la lectura
-    $overlay = new Imagick();
-    $overlay->newImage($W, $H, new ImagickPixel('rgba(0,0,0,0.35)')); 
-    $overlay->setImageFormat('png');
-    $img->compositeImage($overlay, Imagick::COMPOSITE_OVER, 0, 0);
-    $overlay->destroy();
 
 
     // 🔽 Descargar imágenes (CON USER-AGENT AGREGADO)
@@ -284,446 +270,216 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
-    // 📐 Zonas de diseño (REAJUSTADO)
-    $headerStart = 0;
-    $headerEnd = intval($H * 0.20); 
+    // --- 1. BANNER SUPERIOR (100% ANCHO) ---
+    $bannerH = intval($H * 0.25);
+    $bannerY = 0;
     
-    $eventInfoStart = $headerEnd + 20; 
-    $eventInfoEnd = intval($H * 0.26); 
-    
-    $speakersStart = $eventInfoEnd;
-    $speakersEnd = intval($H * 0.70); 
-    
-    $finalAreaEnd = intval($H * 0.95); 
-    
-    $gapSize = 40; 
-    $totalGapsBetweenBoxes = $gapSize * 2; 
+    // 🖼️ Imagen de fondo del banner
+    $bannerImageUrl = $payload['banner_image']['photo'] ?? null;
+    $bannerTitle = $payload['banner_title'] ?? 'Evento Corporativo Inmobiliario'; 
 
-    $availableHeightForBoxes = $finalAreaEnd - $speakersEnd - $totalGapsBetweenBoxes;
-    $equalBoxHeight = intval($availableHeightForBoxes / 2); 
-    
-    $sectionPonentesStart = $speakersEnd + $gapSize; 
-    $sectionPonentesEnd = $sectionPonentesStart + $equalBoxHeight; 
-    
-    $sectionPatrocinadoresStart = $sectionPonentesEnd + $gapSize; 
-    $sectionPatrocinadoresEnd = $sectionPatrocinadoresStart + $equalBoxHeight; 
-    
-    if ($sectionPatrocinadoresEnd > $finalAreaEnd) {
-        $sectionPatrocinadoresEnd = $finalAreaEnd;
-        $sectionPonentesEnd = $sectionPatrocinadoresStart - $gapSize;
-        $equalBoxHeight = $sectionPonentesEnd - $sectionPonentesStart;
-    }
-
-
-    // 🖼️ Banner de IMAGEN centrado con borde redondeado
-    $bannerBoxW = intval($W * 0.65);
-    $bannerBoxH = intval($headerEnd * 0.80); 
-    $bannerX = intval(($W - $bannerBoxW) / 2);
-    $bannerY = intval(($headerEnd - $bannerBoxH) / 2) + 80;
-
-    if (!empty($payload['banner_image']) && ($bannerImageUrl = $payload['banner_image']['photo'] ?? null)) {
-        $bannerImage = $download_image($bannerImageUrl);
-        if ($bannerImage) {
-            $bannerImage = safe_thumbnail($bannerImage, $bannerBoxW, $bannerBoxH, $bannerImageUrl, 'banner principal');
-            if ($bannerImage) {
-                $cornerRadius = 40; 
-                $bannerImage = gi_round_corners($bannerImage, $cornerRadius);
-                $img->compositeImage($bannerImage, Imagick::COMPOSITE_OVER, $bannerX, $bannerY);
-                error_log("🖼️ Banner de imagen principal agregado y redondeado.");
-            }
+    if ($bannerImageUrl) {
+        $bg_image = $download_image($bannerImageUrl);
+        if ($bg_image) {
+            $bg_image = safe_thumbnail($bg_image, $W, $bannerH, $bannerImageUrl, 'banner_top');
+            
+            // Capa negra semi-transparente para mejorar la legibilidad del texto
+            $overlay = new Imagick();
+            $overlay->newImage($W, $bannerH, new ImagickPixel('rgba(0,0,0,0.55)')); 
+            $bg_image->compositeImage($overlay, Imagick::COMPOSITE_OVER, 0, 0);
+            $overlay->destroy();
+            
+            $img->compositeImage($bg_image, Imagick::COMPOSITE_OVER, 0, $bannerY);
+            $bg_image->destroy();
+            error_log("🖼️ Banner de imagen de fondo aplicado.");
         } else {
-             error_log("❌ Error al cargar la imagen de banner: $bannerImageUrl");
+             // Fallback de color sólido si la URL falla
+             $solidBanner = new Imagick();
+             $solidBanner->newImage($W, $bannerH, new ImagickPixel('#1a1a1a'));
+             $img->compositeImage($solidBanner, Imagick::COMPOSITE_OVER, 0, $bannerY);
+             $solidBanner->destroy();
+             error_log("⚠️ Fallback: Banner de color sólido aplicado.");
         }
     } else {
-        error_log("⚠️ No se proporcionó 'banner_image'. Dejando espacio vacío para el banner.");
+         // Fallback de color sólido si no hay URL
+         $solidBanner = new Imagick();
+         $solidBanner->newImage($W, $bannerH, new ImagickPixel('#1a1a1a'));
+         $img->compositeImage($solidBanner, Imagick::COMPOSITE_OVER, 0, $bannerY);
+         $solidBanner->destroy();
+         error_log("⚠️ Fallback: Banner de color sólido aplicado (sin URL).");
     }
 
-    // ✨ Logo superior derecho 
-        $logoMaxHeight = 45; 
-        $logoMaxWidth = intval($W * 0.15); 
+    // ✍️ Texto del Banner (Título principal)
+    $drawTitle = new ImagickDraw();
+    if (file_exists($fontPath)) $drawTitle->setFont($fontPath);
+    $drawTitle->setFillColor('#FFFFFF');
+    $drawTitle->setFontSize(70); 
+    $drawTitle->setFontWeight(900);
+    $drawTitle->setTextAlignment(Imagick::ALIGN_CENTER);
 
-        // Ruta absoluta al logo dentro del plugin
-        $localLogoPath = plugin_dir_path(__FILE__) . 'LOGO_GRUPO_VIA_CMYK_BLANCO.png';
-
-        if (file_exists($localLogoPath)) {
-            try {
-                $headerLogo = new Imagick($localLogoPath);
-
-                // Ajustar el logo (contain) sin deformar
-                $headerLogo = gi_safe_contain_logo(
-                    $headerLogo, 
-                    $logoMaxWidth, 
-                    $logoMaxHeight, 
-                    $localLogoPath, 
-                    'logo_header_local'
-                );
-
-                // Posición
-                $x = $W - $headerLogo->getImageWidth() - 40;
-                $y = 15;
-
-                $img->compositeImage($headerLogo, Imagick::COMPOSITE_OVER, $x, $y);
-                error_log("✨ Logo local del plugin agregado correctamente.");
-
-            } catch (Exception $e) {
-                error_log("❌ Error cargando logo local: " . $e->getMessage());
-            }
-        } else {
-            error_log("❌ Archivo de logo NO ENCONTRADO: $localLogoPath");
-        }
+    $metricsTitle = $img->queryFontMetrics($drawTitle, $bannerTitle);
+    $titleY = $bannerY + ($bannerH / 2) + ($metricsTitle['textHeight'] / 2) - 10;
+    $img->annotateImage($drawTitle, $W / 2, $titleY, 0, $bannerTitle);
+    error_log("✍️ Título del banner superpuesto: $bannerTitle");
 
 
-    // Fallback de Logo de texto
-    if (!isset($headerLogo) || $headerLogo === null) {
-        $fallbackLogoCanvas = new Imagick();
-        $fallbackLogoCanvas->newImage($logoMaxWidth, $logoMaxHeight, new ImagickPixel('transparent'));
-        $fallbackLogoCanvas->setImageFormat('png');
+    // 📅 Detalles del evento (Justo debajo del banner)
+    $eventDetails = $payload['event_details'] ?? '6 NOVIEMBRE 2026 | 9:00H | SILKEN PUERTA VALENCIA';
+    $detailsH = 80;
+    $detailsY = $bannerY + $bannerH;
 
-        $drawFallback = new ImagickDraw();
-        if (file_exists($fontPath)) $drawFallback->setFont($fontPath);
-        $drawFallback->setFillColor('#000000'); 
-        $drawFallback->setFontSize(40); 
-        $drawFallback->setFontWeight(900);
-        $drawFallback->setTextAlignment(Imagick::ALIGN_CENTER);
+    $detailsCanvas = new Imagick();
+    $detailsCanvas->newImage($W, $detailsH, new ImagickPixel('#333333')); // Fondo gris oscuro
+    $detailsCanvas->setImageFormat('png');
 
-        $metrics = $fallbackLogoCanvas->queryFontMetrics($drawFallback, 'LOGO');
-        $textX = $logoMaxWidth / 2;
-        $textY = ($logoMaxHeight + $metrics['textHeight']) / 2; 
+    $drawDetails = new ImagickDraw();
+    if (file_exists($fontPath)) $drawDetails->setFont($fontPath);
+    $drawDetails->setFillColor('#FFFFFF');
+    $drawDetails->setFontSize(35); 
+    $drawDetails->setFontWeight(600);
+    $drawDetails->setTextAlignment(Imagick::ALIGN_CENTER);
 
-        $fallbackLogoCanvas->annotateImage($drawFallback, $textX, $textY, 0, 'LOGO');
-        $img->compositeImage($fallbackLogoCanvas, Imagick::COMPOSITE_OVER, $W - $logoMaxWidth - 40, 15);
-        error_log("✨ Se ha usado el logo de fallback de texto 'LOGO'.");
-    }
+    $metricsDetails = $detailsCanvas->queryFontMetrics($drawDetails, $eventDetails);
+    $detailsTextY = ($detailsH / 2) + ($metricsDetails['textHeight'] / 2);
+    $detailsCanvas->annotateImage($drawDetails, $W / 2, $detailsTextY, 0, $eventDetails); 
     
-    // 📅 Detalles del evento (Fuente ajustada a 40px)
-    $draw = new ImagickDraw();
-    if (file_exists($fontPath)) $draw->setFont($fontPath);
-    $draw->setFillColor('#FFFFFF');
-    $draw->setFontSize(40); // 👈 TAMAÑO REDUCIDO
-    $draw->setFontWeight(600);
-    $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-    $eventDetails = $payload['event_details'] ?? '6 noviembre 2026 9:00h - Silken Puerta Valencia';
-    $img->annotateImage($draw, $W / 2, $eventInfoStart +80, 0, $eventDetails); 
-    error_log("📅 Detalles: $eventDetails (reposicionado)");
+    $img->compositeImage($detailsCanvas, Imagick::COMPOSITE_OVER, 0, $detailsY);
+    $detailsCanvas->destroy();
+    error_log("📅 Detalles del evento añadidos: $eventDetails");
+    
+    // --- 2. GRID DE TARJETAS (2x3) ---
 
-    // 👤 Speakers con recuadros redondeados (Fuentes a 32px y 22px)
     $speakers = $payload['speakers'] ?? [];
-    if (!empty($speakers)) {
-        error_log("🎤 Procesando ".count($speakers)." speakers");
-
-        $totalSpeakers = count($speakers);
+    $totalSpeakers = count($speakers);
+    
+    if ($totalSpeakers > 0) {
         $cols = 3;
-        $rows = ceil($totalSpeakers / $cols);
+        $rows = 2; // Fijo 2 filas
+        $maxSpeakers = $cols * $rows; 
         
-        // AJUSTE: TAMAÑO DE TARJETA DE SPEAKER
-        $photoW = intval($W / 4.5); 
-        $photoH = intval($photoW * 1.2); 
-        
-        $gapX = 50; 
-        $gapY = 60; 
-        
-        // AJUSTE: PROPORCIÓN FOTO/TEXTO
-        $textHeightInternal = intval($photoH * 0.3); 
-        $photoImageHeight = $photoH - $textHeightInternal; // Altura que queda para la imagen
-        // FIN AJUSTE
+        $gridYStart = $detailsY + $detailsH + 40; // Comienza después de los detalles
+        $gridYEnd = $H - 40; // 40px de margen inferior
 
-        $availableHeight = $speakersEnd - $speakersStart;
-        $totalHeight = $rows * $photoH + ($rows - 1) * $gapY;
-        $startY = $speakersStart + intval(($availableHeight - $totalHeight) / 2);
+        $gridW = intval($W * 0.90); // Ancho del 90%
+        $gridX = ($W - $gridW) / 2;
+        $gridH = $gridYEnd - $gridYStart;
+
+        $gapX = 40; // Espaciado horizontal
+        $gapY = 50; // Espaciado vertical
+
+        $cardW = intval(($gridW - ($cols - 1) * $gapX) / $cols);
+        $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows);
+        
+        // Dimensiones internas de la tarjeta
+        $photoDiameter = intval($cardW * 0.40); // 40% del ancho de la tarjeta
+        $logoH = 40; // Altura fija para el logo
+        $logoW = intval($cardW * 0.70); // Ancho máximo para el logo
+        
+        $nameFontSize = 28;
+        $roleFontSize = 20;
 
         $index = 0;
         for ($r = 0; $r < $rows; $r++) {
-            $y = $startY + $r * ($photoH + $gapY); 
-            $numInRow = min($cols, $totalSpeakers - $index);
-            $rowW = $numInRow * $photoW + ($numInRow - 1) * $gapX;
-            $x = ($W - $rowW) / 2;
-
-            for ($c = 0; $c < $numInRow; $c++) {
+            $y = $gridYStart + $r * ($cardH + $gapY);
+            for ($c = 0; $c < $cols; $c++) {
+                if ($index >= $totalSpeakers || $index >= $maxSpeakers) break 2; // Salir de ambos bucles
+                
                 $sp = $speakers[$index++] ?? null;
                 if (!$sp) continue;
 
+                $cardCanvas = new Imagick();
+                $cardCanvas->newImage($cardW, $cardH, new ImagickPixel('#FFFFFF'));
+                $cardCanvas->setImageFormat('png');
+                
+                // 🖌️ Redondear esquinas y aplicar sombra
+                $cornerRadius = 20; 
+                $cardCanvas = gi_round_corners($cardCanvas, $cornerRadius);
+                $cardCanvas->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)'));
+                $cardCanvas->shadowImage(80, 5, 0, 0); // Radio, sigma, x-offset, y-offset
+
+                $x = $gridX + $c * ($cardW + $gapX);
+                
+                $currentY = 30; // Margen superior interno
+                
+                // 📷 Foto Circular
                 $photoUrl = $sp['photo'] ?? null;
-                $name = trim($sp['name'] ?? '');
-                $role = trim($sp['role'] ?? '');
-
                 $photoBase = $download_image($photoUrl);
+
+                if ($photoBase) {
+                    $photoBase = safe_thumbnail($photoBase, $photoDiameter, $photoDiameter, $photoUrl, 'speaker_circular');
+                    if ($photoBase) {
+                        $photoBase = gi_circular_mask($photoBase);
+                        $photoX = ($cardW - $photoDiameter) / 2;
+                        $cardCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), $currentY);
+                        $photoBase->destroy();
+                        $currentY += $photoDiameter + 20; 
+                    }
+                }
                 
-                // Usamos 'speaker' como contexto para activar el recorte superior en safe_thumbnail
-                $photoBase = safe_thumbnail($photoBase, $photoW, $photoImageHeight, $photoUrl, 'speaker');
-                if (!$photoBase) continue;
-
-                $speakerCanvas = new Imagick();
-                $speakerCanvas->newImage($photoW, $photoH, new ImagickPixel('transparent'));
-                $speakerCanvas->setImageFormat('png');
-
-                $speakerCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, 0, 0);
-
-                $whiteBg = new Imagick();
-                $whiteBg->newImage($photoW, $textHeightInternal, new ImagickPixel('#FFFFFF'));
-                $whiteBg->setImageFormat('png');
-                $speakerCanvas->compositeImage($whiteBg, Imagick::COMPOSITE_OVER, 0, $photoImageHeight); 
-                $whiteBg->destroy();
-                $photoBase->destroy();
-
-                try {
-                    $draw = new ImagickDraw();
-                    if (file_exists($fontPath)) $draw->setFont($fontPath);
-                    $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-                    $draw->setFillColor('#000000'); 
-                    $draw->setFontSize(32); 
-                    $draw->setFontWeight(900);
-
-                    $centerX = $photoW / 2;
-                    $nameY = $photoImageHeight + intval($textHeightInternal / 2) - 15; 
-
-                    if ($name) {
-                        $speakerCanvas->annotateImage($draw, $centerX, $nameY, 0, $name);
-                    }
-
-                    if ($role) {
-                        $drawRole = new ImagickDraw();
-                        if (file_exists($fontPath)) $drawRole->setFont($fontPath);
-                        $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
-                        $drawRole->setFillColor('#555555'); 
-                        $drawRole->setFontSize(22); 
-                        $drawRole->setFontWeight(600);
-
-                        // --- INICIO AJUSTE DE LÍNEA: Rol ---
-                        $maxWidthForText = $photoW - 30; // 15px de margen a cada lado
-                        $roleLines = gi_word_wrap_text($drawRole, $speakerCanvas, $role, $maxWidthForText);
+                // ✍️ Nombre
+                $drawName = new ImagickDraw();
+                if (file_exists($fontPath)) $drawName->setFont($fontPath);
+                $drawName->setFillColor('#000000'); 
+                $drawName->setFontSize($nameFontSize); 
+                $drawName->setFontWeight(900);
+                $drawName->setTextAlignment(Imagick::ALIGN_CENTER);
+                $name = trim($sp['name'] ?? 'Nombre Apellido');
+                
+                $metricsName = $cardCanvas->queryFontMetrics($drawName, $name);
+                $nameY = $currentY + $metricsName['textHeight'] / 2;
+                $cardCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
+                $currentY += $metricsName['textHeight'] + 10; 
+                
+                // ✍️ Rol (Ocupación)
+                $drawRole = new ImagickDraw();
+                if (file_exists($fontPath)) $drawRole->setFont($fontPath);
+                $drawRole->setFillColor('#555555'); 
+                $drawRole->setFontSize($roleFontSize); 
+                $drawRole->setFontWeight(600);
+                $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
+                $role = trim($sp['role'] ?? 'Cargo en la Empresa');
+                
+                $roleLines = gi_word_wrap_text($drawRole, $cardCanvas, $role, $cardW - 40);
+                $lineHeight = 25; 
+                
+                foreach ($roleLines as $i => $line) {
+                    $cardCanvas->annotateImage($drawRole, $cardW / 2, $currentY + ($i * $lineHeight), 0, $line);
+                }
+                $currentY += count($roleLines) * $lineHeight + 15; 
+                
+                
+                // 🏢 Logo de Empresa (Patrocinador/Organización)
+                $logoUrl = $sp['logo'] ?? null;
+                $logoBase = $download_image($logoUrl);
+                
+                if ($logoBase) {
+                    $logoBase = gi_safe_contain_logo($logoBase, $logoW, $logoH, $logoUrl, 'logo_speaker');
+                    if ($logoBase) {
+                        $logoX = ($cardW - $logoBase->getImageWidth()) / 2;
+                        // Centrar verticalmente el logo en el espacio restante de la tarjeta
+                        $remainingSpace = $cardH - $currentY - 20; 
+                        $logoY = $currentY + ($remainingSpace - $logoBase->getImageHeight()) / 2;
                         
-                        $lineHeight = 25; // Espacio vertical entre líneas
-                        $roleYStart = $nameY + 30; // Posición inicial
-                        
-                        foreach ($roleLines as $i => $line) {
-                            $speakerCanvas->annotateImage($drawRole, $centerX, $roleYStart + ($i * $lineHeight), 0, $line);
-                        }
-                        // --- FIN AJUSTE DE LÍNEA: Rol ---
+                        $cardCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
+                        $logoBase->destroy();
                     }
-                } catch (Exception $e) {
-                    error_log("💥 Error texto en speaker canvas: ".$e->getMessage());
                 }
 
-                $cornerRadius = 30; 
-                $speakerCanvas = gi_round_corners($speakerCanvas, $cornerRadius);
-                if (!$speakerCanvas) continue; 
-                
-                $img->compositeImage($speakerCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
-                $speakerCanvas->destroy();
-
-                $x += $photoW + $gapX;
+                // 🖼️ Componer la tarjeta en el lienzo principal
+                $img->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
+                $cardCanvas->destroy();
             }
         }
-        error_log("🎤 Grid: $rows filas x $cols columnas");
+        error_log("🎤 Grid de tarjetas 2x3 generado con éxito.");
+    } else {
+        error_log("⚠️ No hay datos de 'speakers' para generar el grid.");
     }
 
-    // 🏷️ Sección de Ponentes (Ajuste de Logos a 16:9 y Fuente a 30px)
-    $logos = $payload['logos'] ?? [];
-    if (!empty($logos)) {
-        $sectionPonentesW = $W - 80; 
-        $sectionPonentesH = $equalBoxHeight; 
-        $sectionPonentesX = ($W - $sectionPonentesW) / 2;
-        $sectionPonentesY = $sectionPonentesStart;
-
-        $ponPonentessCanvas = new Imagick();
-        $ponPonentessCanvas->newImage($sectionPonentesW, $sectionPonentesH, new ImagickPixel('#FFFFFF'));
-        $ponPonentessCanvas->setImageFormat('png');
-
-        $cornerRadius = 30; 
-        $ponPonentessCanvas = gi_round_corners($ponPonentessCanvas, $cornerRadius);
-        if (!$ponPonentessCanvas) {
-            error_log("❌ No se pudo redondear el canvas de ponentes.");
-            return new WP_REST_Response(['error'=>'Failed to round corners for ponentes section'], 500);
-        }
-        
-        $draw = new ImagickDraw();
-        if (file_exists($fontPath)) $draw->setFont($fontPath);
-        $draw->setFillColor('#000000');
-        $draw->setFontSize(30);
-        $draw->setFontWeight(800);
-        $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-        
-        $titlePonentesY = 40; 
-        $ponPonentessCanvas->annotateImage($draw, $sectionPonentesW / 2, $titlePonentesY, 0, 'Ponentes:');
-
-        $logosAreaTop = $titlePonentesY + 30; 
-        $logosAreaHeight = $sectionPonentesH - $logosAreaTop - 20; 
-        
-        // **DIMENSIONES OBJETIVO PARA LOGOS (MÁXIMO 16:9)**
-        $logoAreaTargetH = intval($logosAreaHeight * 0.80);
-        $logoAreaTargetW = intval($logoAreaTargetH * (16/9)); // 16:9 proporción para el ancho máximo
-
-        $totalLogosInRow = count($logos);
-        $gapBetweenLogos = 40; 
-        $horizontalPadding = 60; 
-
-        // Calculamos el ancho MÁXIMO disponible para cada logo, manteniendo el 16:9
-        $availableLogosWidth = $sectionPonentesW - ($horizontalPadding * 2);
-        $calculatedMaxW = ($availableLogosWidth - ($totalLogosInRow - 1) * $gapBetweenLogos) / $totalLogosInRow;
-        
-        // El ancho máximo real será el menor entre el ancho calculado y el ancho basado en la altura 16:9
-        $maxW = min($logoAreaTargetW, (int)$calculatedMaxW); 
-        $maxH = intval($maxW / (16/9)); // Altura ajustada para 16:9
-
-        // Asegurar que la altura no supere el área disponible
-        if ($maxH > $logoAreaTargetH) {
-             $maxH = $logoAreaTargetH;
-             $maxW = intval($maxH * (16/9));
-        }
-
-
-        $actualLogosWidth = $totalLogosInRow * $maxW + ($totalLogosInRow - 1) * $gapBetweenLogos;
-        $startLogoXInsideBox = $horizontalPadding + intval(($availableLogosWidth - $actualLogosWidth) / 2);
-
-        $currentX = $startLogoXInsideBox;
-
-        foreach ($logos as $logo) {
-            $m = $download_image($logo['photo']);
-            
-            // Usamos la nueva función CONTAIN/AJUSTAR
-            $m = gi_safe_contain_logo($m, $maxW, $maxH, $logo['photo'], 'logo ponente');
-            if (!$m) continue;
-            
-            // Calcular el centrado vertical dentro del área del logo
-            $logoY = $logosAreaTop + intval(($logosAreaHeight - $m->getImageHeight()) / 2);
-            
-            $ponPonentessCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
-            $currentX += $maxW + $gapBetweenLogos; // Avanzamos por el ancho máximo del slot (maxW), no por el ancho redimensionado (m->getImageWidth())
-        }
-
-        $img->compositeImage($ponPonentessCanvas, Imagick::COMPOSITE_OVER, $sectionPonentesX, $sectionPonentesY);
-        error_log("💼 ".count($logos)." logos ponentes ajustados a 16:9 (max ".$maxW."x".$maxH.").");
-    }
-
-    // 🤝 Sección de Patrocinadores (Ajuste de Logos a 16:9 y Fuente a 30px)
-    $sponsors = $payload['sponsors'] ?? [];
-    $closingImages = $payload['closing_images'] ?? []; 
-    
-    if (!empty($sponsors) || !empty($closingImages)) {
-        $sectionPatrocinadoresW = $W - 80; 
-        $sectionPatrocinadoresH = $equalBoxHeight; 
-        $sectionPatrocinadoresX = ($W - $sectionPatrocinadoresW) / 2;
-        $sectionPatrocinadoresY = $sectionPatrocinadoresStart;
-
-        $patrocinadoresCanvas = new Imagick();
-        $patrocinadoresCanvas->newImage($sectionPatrocinadoresW, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF'));
-        $patrocinadoresCanvas->setImageFormat('png');
-
-        $cornerRadius = 30; 
-        $patrocinadoresCanvas = gi_round_corners($patrocinadoresCanvas, $cornerRadius);
-        if (!$patrocinadoresCanvas) {
-            error_log("❌ No se pudo redondear el canvas de patrocinadores.");
-            return new WP_REST_Response(['error'=>'Failed to round corners for patrocinadores section'], 500);
-        }
-        
-        $currentContentY = 30; 
-
-        $draw = new ImagickDraw();
-        if (file_exists($fontPath)) $draw->setFont($fontPath);
-        $draw->setFillColor('#000000');
-        $draw->setFontSize(30);
-        $draw->setFontWeight(800);
-        $draw->setTextAlignment(Imagick::ALIGN_CENTER);
-        $patrocinadoresCanvas->annotateImage($draw, $sectionPatrocinadoresW / 2, $currentContentY, 0, 'Patrocina:');
-        $currentContentY += 50; 
-
-        $remainingHeight = $sectionPatrocinadoresH - $currentContentY - 20; 
-        // Si no hay closingImages, los patrocinadores pueden usar más altura
-        $blockHeight = empty($closingImages) ? $remainingHeight : intval($remainingHeight / 2); 
-
-        // Logos de Patrocinadores
-        if (!empty($sponsors)) {
-            $logosAreaHeight = $blockHeight; 
-            
-            // **DIMENSIONES OBJETIVO PARA SPONSORS (MÁXIMO 16:9)**
-            // MODIFICADO: Cambiado de 0.90 a 0.80 para igualar el tamaño con Ponentes.
-            $logoAreaTargetH = intval($logosAreaHeight * 0.80); 
-            $logoAreaTargetW = intval($logoAreaTargetH * (16/9)); 
-
-            $totalSponsorsInRow = count($sponsors);
-            $gapBetweenSponsors = 40; // Mantener consistente con ponentes
-            $horizontalPadding = 60; 
-
-            $availableSponsorsWidth = $sectionPatrocinadoresW - ($horizontalPadding * 2);
-            $calculatedMaxW = ($availableSponsorsWidth - ($totalSponsorsInRow - 1) * $gapBetweenSponsors) / $totalSponsorsInRow;
-            
-            // Aseguramos que el ancho máximo del slot sea el menor entre el objetivo y el calculado
-            $maxW = min($logoAreaTargetW, (int)$calculatedMaxW);
-            // Calculamos la altura en base a ese maxW para mantener el 16:9
-            $maxH = intval($maxW / (16/9));
-
-            // Si la altura resultante excede la altura objetivo, ajustamos.
-             if ($maxH > $logoAreaTargetH) {
-                 $maxH = $logoAreaTargetH;
-                 $maxW = intval($maxH * (16/9));
-            }
-            // Segunda verificación: si hay un solo logo y es muy ancho, ajustarlo al 16:9 basado en la altura.
-            if ($totalSponsorsInRow === 1 && $maxW > $availableSponsorsWidth) {
-                $maxW = $availableSponsorsWidth;
-                $maxH = intval($maxW / (16/9));
-                if ($maxH > $logoAreaTargetH) { // Re-verificar si el ajuste por ancho excedió la altura
-                    $maxH = $logoAreaTargetH;
-                    $maxW = intval($maxH * (16/9));
-                }
-            }
-
-
-            $actualSponsorsWidth = $totalSponsorsInRow * $maxW + ($totalSponsorsInRow - 1) * $gapBetweenSponsors;
-            $startSponsorXInsideBox = $horizontalPadding + intval(($availableSponsorsWidth - $actualSponsorsWidth) / 2);
-
-            $currentX = $startSponsorXInsideBox;
-
-            foreach ($sponsors as $sp) {
-                $m = $download_image($sp['photo']);
-                
-                // Usamos la nueva función CONTAIN/AJUSTAR con las dimensiones maxW y maxH calculadas
-                $m = gi_safe_contain_logo($m, $maxW, $maxH, $sp['photo'], 'sponsor logo');
-                if (!$m) continue;
-                
-                // Centrar verticalmente el logo dentro de su slot
-                $logoY = $currentContentY + intval(($logosAreaHeight - $m->getImageHeight()) / 2);
-                
-                $patrocinadoresCanvas->compositeImage($m, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY)); 
-                $currentX += $maxW + $gapBetweenSponsors; // Avanzamos por el ancho máximo del slot (maxW)
-            }
-            error_log("🤝 ".count($sponsors)." patrocinadores ajustados a 16:9 (max ".$maxW."x".$maxH.").");
-        }
-        $currentContentY += $blockHeight + 10; 
-
-        // Las 2 Fotos Finales
-        if (!empty($closingImages) && count($closingImages) >= 2) {
-            // El espacio para las imágenes finales es el remanente si no hay patrocinadores o el blockHeight si hay.
-            $imagesAreaHeight = empty($sponsors) ? $remainingHeight : $blockHeight; 
-            $imageMaxH = intval($imagesAreaHeight * 0.80);
-            
-            $imageW = intval($sectionPatrocinadoresW / 2 - 80); 
-            $imageH = $imageMaxH;
-
-            $img1 = $download_image($closingImages[0]['photo'] ?? null);
-            $img2 = $download_image($closingImages[1]['photo'] ?? null);
-
-            // Estas imágenes no son logos, usamos la lógica de COVER (safe_thumbnail)
-            $img1 = safe_thumbnail($img1, $imageW, $imageH, $closingImages[0]['photo'] ?? '', 'closing_image_1');
-            $img2 = safe_thumbnail($img2, $imageW, $imageH, $closingImages[1]['photo'] ?? '', 'closing_image_2');
-
-            $totalClosingImagesWidth = ($img1 ? $img1->getImageWidth() : 0) + ($img2 ? $img2->getImageWidth() : 0) + 60; 
-            $startClosingImageX = intval(($sectionPatrocinadoresW - $totalClosingImagesWidth) / 2);
-
-            if ($img1) {
-                $patrocinadoresCanvas->compositeImage($img1, Imagick::COMPOSITE_OVER, $startClosingImageX, intval($currentContentY + ($imagesAreaHeight - $img1->getImageHeight()) / 2));
-            }
-            if ($img2) {
-                $patrocinadoresCanvas->compositeImage($img2, Imagick::COMPOSITE_OVER, $startClosingImageX + ($img1 ? $img1->getImageWidth() : 0) + 60, intval($currentContentY + ($imagesAreaHeight - $img2->getImageHeight()) / 2));
-            }
-            error_log("🖼️ 2 imágenes finales agregadas.");
-        }
-
-        $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, $sectionPatrocinadoresX, $sectionPatrocinadoresY);
-    }
 
     // 📤 Exportar
+    // (Lógica de exportación sin cambios)
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_inmobiliario').'.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_inmobiliario').'_new_design.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -752,7 +508,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada: $url");
+    error_log("✅ Imagen generada (Nuevo Diseño): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
