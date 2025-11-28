@@ -269,7 +269,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     
     // << INICIO DEL CAMBIO: EFECTO DE ELEVACIÓN LIGERA >>
     // 1. Definir la cantidad de solapamiento (Ajustado a 15% de la altura de la tarjeta)
-    $overlapPercentage = 0.15; // ¡CAMBIO AQUÍ! De 0.35 a 0.15
+    $overlapPercentage = 0.6; // ¡CAMBIO AQUÍ! De 0.35 a 0.15
     $overlapAmount = intval($cardH * $overlapPercentage); // Aprox 84px
 
     // 2. El punto de inicio Y del grid es el borde inferior del banner ($bannerH) menos el solapamiento.
