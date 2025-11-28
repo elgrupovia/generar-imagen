@@ -253,8 +253,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $bannerY = 0;
     
     $bannerImageUrl = $payload['banner_image']['photo'] ?? null;
-    $bannerTitle = $payload['banner_title'] ?? 'Evento Corporativo Inmobiliario'; 
-    $eventDetails = $payload['event_details'] ?? '6 NOVIEMBRE 2026 | 9:00H | SILKEN PUERTA VALENCIA';
+    
 
     if ($bannerImageUrl) {
         $bg_image = $download_image($bannerImageUrl);
