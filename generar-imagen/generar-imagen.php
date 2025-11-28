@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.11.0
+ * Version: 2.12.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjetas Ligeramente Elevadas');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjetas Mínimamente Elevadas');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -146,7 +146,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con Tarjetas de Speakers LIGERAMENTE Flotantes');
+    error_log('🚀 Ejecutando con Tarjetas de Speakers Mínimamente Flotantes');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -267,14 +267,14 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $cardW = intval(($gridW - ($cols - 1) * $gapX) / $cols); // 448px
     $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows); // 564px
     
-    // << INICIO DEL CAMBIO: EFECTO DE ELEVACIÓN LIGERA >>
-    // 1. Definir la cantidad de solapamiento (Ajustado a 15% de la altura de la tarjeta)
-    $overlapPercentage = 0.6; // ¡CAMBIO AQUÍ! De 0.35 a 0.15
-    $overlapAmount = intval($cardH * $overlapPercentage); // Aprox 84px
+    // << INICIO DEL CAMBIO: EFECTO DE ELEVACIÓN MÍNIMA >>
+    // 1. Definir la cantidad de solapamiento (Ajustado a 5% de la altura de la tarjeta)
+    $overlapPercentage = 0.05; // ¡CAMBIO AQUÍ! De 0.15 a 0.05
+    $overlapAmount = intval($cardH * $overlapPercentage); // Aprox 28px (Solapamiento mínimo)
 
     // 2. El punto de inicio Y del grid es el borde inferior del banner ($bannerH) menos el solapamiento.
-    $gridYStart = $bannerH - $overlapAmount; // 840px - 84px = 756px
-    // << FIN DEL CAMBIO: EFECTO DE ELEVACIÓN LIGERA >>
+    $gridYStart = $bannerH - $overlapAmount; // 840px - 28px = 812px
+    // << FIN DEL CAMBIO: EFECTO DE ELEVACIÓN MÍNIMA >>
 
     
     // --- Dimensiones Internas de la Tarjeta ---
@@ -410,18 +410,23 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cardCanvas->destroy();
         }
     }
-    error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto ligeramente flotante.");
+    error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto de elevación mínima (5%).");
 
     // --- 2b. BARRA DE SPONSORS (Aprox. 20% de la sección 65%) ---
     $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 312px
     
-    // Ajuste en Y para la barra de patrocinadores para que comience justo donde termina la parte inferior de las tarjetas.
-    // El $gridYStart ahora es más arriba, así que necesitamos calcular el final de la última fila de tarjetas.
+    // Calcula el Y final de la última fila de tarjetas
     $lastCardRowYEnd = $gridYStart + ($rows - 1) * ($cardH + $gapY) + $cardH;
-    $sectionPatrocinadoresY = $lastCardRowYEnd + ($gapY / 2); // Un pequeño espacio de separación
+    
+    // Coloca la barra de patrocinadores justo debajo de la última fila de tarjetas + la mitad del gap vertical para mantener algo de separación.
+    $sectionPatrocinadoresY = $lastCardRowYEnd + ($gapY / 2); 
 
     $patrocinadoresCanvas = new Imagick();
-    $patrocinadoresCanvas->newImage($W, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF')); 
+    // Aseguramos que la altura de la barra de patrocinadores no se salga del lienzo
+    $calculatedH = $H - $sectionPatrocinadoresY;
+    if ($calculatedH < 100) $calculatedH = 100; // Mínimo de 100px si los cálculos anteriores redujeron mucho el espacio
+    
+    $patrocinadoresCanvas->newImage($W, $calculatedH, new ImagickPixel('#FFFFFF')); 
     $patrocinadoresCanvas->setImageFormat('png');
     
     $sponsorLogos = array_merge($payload['logos'] ?? [], $payload['sponsors'] ?? []);
@@ -440,10 +445,16 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $metricsST = $patrocinadoresCanvas->queryFontMetrics($drawSponsorTitle, $sponsorTitleText);
         
         $titleY = 30 + $metricsST['textHeight'];
-        $patrocinadoresCanvas->annotateImage($drawSponsorTitle, $W / 2, $titleY, 0, $sponsorTitleText);
+        
+        // Si hay espacio, se dibuja el título
+        if ($calculatedH > $titleY + 10) {
+            $patrocinadoresCanvas->annotateImage($drawSponsorTitle, $W / 2, $titleY, 0, $sponsorTitleText);
+            $logosYStart = $titleY + 10; 
+        } else {
+            $logosYStart = 10;
+        }
 
-        $logosYStart = $titleY + 10; 
-        $logosAreaH = $sectionPatrocinadoresH - $logosYStart - 10; 
+        $logosAreaH = $calculatedH - $logosYStart - 10; 
         
         $logoMaxH = intval($logosAreaH * 0.80); 
         $logoAreaW = $W - 2 * $marginLR; 
@@ -496,12 +507,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
     
-    $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, 0, $sectionPatrocinadoresY);
+    $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, 0, intval($sectionPatrocinadoresY));
     $patrocinadoresCanvas->destroy();
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v9.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v10.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -530,7 +541,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V9): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V10): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
