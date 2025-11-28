@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.22.0
+ * Version: 2.23.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Logos de Speakers Tamaño Uniforme (Altura aumentada al 20%)');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Logos de Speakers Tamaño Uniforme (Altura fija generosa de 180px)');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -321,9 +321,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $speakerPhotoCornerRadius = 20; // Radio de redondeo para las fotos de speakers
 
     // Área reservada para el logo del speaker (Ajustado para uniformidad)
-    $speakerLogoAreaW = $cardW - $internalPadding * 2; // Ancho disponible
-    // FIX: Aumentado del 15% al 20% para acomodar mejor logos verticales (como Gran Canaria y FEHT)
-    $speakerLogoAreaH = intval($cardH * 0.20); 
+    $speakerLogoAreaW = $cardW - $internalPadding * 2; // Ancho disponible (388px)
+    // FIX: Altura fija generosa para asegurar que los logos altos se escalen a un tamaño visible
+    $speakerLogoAreaH = 180; 
     
     $index = 0;
     for ($r = 0; $r < $rows; $r++) {
@@ -427,7 +427,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $logoBase = $download_image($logoUrl);
 
             if ($logoBase) {
-                // Usamos el área fija para el logo del speaker (Aumentada a 20% de H)
+                // Usamos el área fija para el logo del speaker (180px H)
                 $logoBase = gi_safe_contain_logo($logoBase, $speakerLogoAreaW, $speakerLogoAreaH, $logoUrl, 'speaker_logo');
                 if ($logoBase) {
                     $logoW = $logoBase->getImageWidth();
@@ -455,7 +455,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cardCanvas->destroy();
         }
     }
-    error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto de elevación mínima (5%). Logos de speakers uniformes (20% H).");
+    error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto de elevación mínima (5%). Logos de speakers uniformes (180px H max).");
 
 
     // --- 2b. BARRA DE SPONSORS (Horizontal, Sin Título y Logos Grandes) ---
@@ -575,7 +575,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
     // Actualizar nombre de archivo para reflejar la versión
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v19.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v20.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -604,7 +604,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V19): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V20): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
