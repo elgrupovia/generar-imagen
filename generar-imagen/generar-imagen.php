@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.8.0
+ * Version: 2.9.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjetas Blancas');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjetas Blancas (V2.9.0)');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -146,7 +146,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con FIX para Tarjetas de Speakers Blancas');
+    error_log('🚀 Ejecutando con FIX DE COMPOSICIÓN para Tarjetas de Speakers Blancas');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -234,7 +234,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $bg_image = safe_thumbnail($bg_image, $W, $bannerH, $bannerImageUrl, 'banner_top');
             $img->compositeImage($bg_image, Imagick::COMPOSITE_OVER, 0, $bannerY);
             $bg_image->destroy();
-            error_log("🖼️ Banner de imagen de fondo aplicado (sin overlay ni texto superpuesto).");
+            error_log("🖼️ Banner de imagen de fondo aplicado (sin texto superpuesto).");
 
         } else {
              $solidBanner = new Imagick();
@@ -276,10 +276,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $nameFontSize = 40; 
     $roleFontSize = 25; 
     
-    $logoMaxH = intval($cardH * 0.10); // Altura máxima para el logo (56px) - Ajustado ligeramente
+    $logoMaxH = intval($cardH * 0.10); // Altura máxima para el logo (56px)
     
     $internalPadding = 30; // Para el espacio interior del texto
-    $shadowMargin = 15;
+    $shadowMargin = 15; // Margen para la sombra
 
     $index = 0;
     for ($r = 0; $r < $rows; $r++) {
@@ -290,39 +290,40 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $sp = $speakers[$index++] ?? null;
             if (!$sp) continue;
 
+            // 1. Crear el fondo BLANCO y redondear esquinas (TARJETA BLANCA LIMPIA)
             $cardCanvas = new Imagick();
-            // Aseguramos que el fondo de la tarjeta sea BLANCO
             $cardCanvas->newImage($cardW, $cardH, new ImagickPixel('#FFFFFF'));
             $cardCanvas->setImageFormat('png');
-            
-            // 🖌️ Redondear esquinas y aplicar sombra
             $cornerRadius = 20; 
             $cardCanvas = gi_round_corners($cardCanvas, $cornerRadius);
 
-            // Crear un canvas para la sombra y luego componer la tarjeta en él
-            $cardWithShadow = new Imagick();
-            $cardWithShadow->newImage($cardW + $shadowMargin*2, $cardH + $shadowMargin*2, new ImagickPixel('transparent'));
-            $cardWithShadow->setImageFormat('png');
+            // 2. Crear la sombra (objeto transparente + shadow)
+            $shadowBase = clone $cardCanvas;
+            $shadowBase->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)')); 
+            $shadowBase->shadowImage(80, 5, 0, 0); // Aplica la sombra
 
-            // Aplicar la sombra a la tarjeta de contenido, no al canvas de sombra
-            $cardCanvas->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)')); // Fondo transparente para la sombra
-            $cardCanvas->shadowImage(80, 5, 0, 0); 
+            // 3. Crear el contenedor final (sombra + tarjeta blanca + contenido)
+            $cardContainer = new Imagick();
+            $cardContainer->newImage($cardW + $shadowMargin*2, $cardH + $shadowMargin*2, new ImagickPixel('transparent'));
+            $cardContainer->setImageFormat('png');
 
-            // Componer la tarjeta (con su sombra) en el canvas de sombra
-            $cardWithShadow->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
-            $cardCanvas->destroy(); // Destruimos el canvas original, ahora trabajamos con cardWithShadow
-            $cardCanvas = $cardWithShadow; 
+            // 4. Componer la sombra (como fondo del contenedor)
+            $cardContainer->compositeImage($shadowBase, Imagick::COMPOSITE_OVER, 0, 0); 
+            $shadowBase->destroy();
+
+            // 5. Componer la tarjeta BLANCA limpia encima de la sombra
+            $cardContainer->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
+            $cardCanvas->destroy();
+            $cardCanvas = $cardContainer; // Ahora $cardCanvas es el contenedor final con sombra y fondo BLANCO
             
+            // Calculo de posición para el lienzo principal
             $x = $gridXStart + $c * ($cardW + $gapX) - $shadowMargin; 
             $y = $baseY - $shadowMargin;
             
             // --- CONTENIDO INTERNO DE LA TARJETA ---
-            // Este canvas será el que contenga la foto, nombre, rol y logo.
-            // Se compondrá sobre el fondo blanco inicial de la tarjeta.
             $internalContentCanvas = new Imagick();
             $internalContentCanvas->newImage($cardW, $cardH, new ImagickPixel('transparent'));
             $internalContentCanvas->setImageFormat('png');
-
 
             $currentY = $photoMarginTop; // 28px
             
@@ -382,8 +383,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                     $logoW = $logoBase->getImageWidth();
                     $logoH = $logoBase->getImageHeight();
                     
-                    // Calcular Y para centrar el logo en el espacio restante de la tarjeta
-                    $remainingSpace = $cardH - $currentY - ($photoMarginTop/2); // Usar la mitad del margen superior como padding inferior
+                    $remainingSpace = $cardH - $currentY - ($photoMarginTop/2);
                     $logoY = $currentY + ($remainingSpace - $logoH) / 2;
                     
                     $logoX = ($cardW - $logoW) / 2;
@@ -393,17 +393,17 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             }
 
 
-            // Componemos el contenido interno (foto, nombre, rol, logo) en la tarjeta con sombra
-            // La tarjeta (cardCanvas) ya tiene su fondo blanco y sombra.
+            // 6. Componer el contenido en el contenedor BLANCO/Sombra
+            // El offset es necesario para centrar el contenido en el espacio no-sombra
             $cardCanvas->compositeImage($internalContentCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
             $internalContentCanvas->destroy();
 
-            // 🖼️ Componer la tarjeta completa (fondo blanco, contenido y sombra) en el lienzo principal
+            // 7. Componer la tarjeta completa en el lienzo principal
             $img->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
             $cardCanvas->destroy();
         }
     }
-    error_log("🎤 Grid de tarjetas 2x3 generado con logos de speakers (FIX BLANCO aplicado).");
+    error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO garantizado.");
 
     // --- 2b. BARRA DE SPONSORS (Aprox. 20% de la sección 65%) ---
     $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 312px
@@ -490,7 +490,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v6.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v7.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -519,7 +519,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V6): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V7): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
