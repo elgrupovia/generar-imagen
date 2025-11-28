@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.23.0
+ * Version: 2.24.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Logos de Speakers Tamaño Uniforme (Altura fija generosa de 180px)');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Logos de Speakers Tamaño Uniforme (Altura condicional por Aspect Ratio)');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -69,6 +69,7 @@ function gi_safe_contain_logo($imagick, $targetW, $targetH, $url, $context) {
     try {
         if ($imagick->getImageWidth() > 0 && $imagick->getImageHeight() > 0) {
             if ($targetW > 0 && $targetH > 0) {
+                // La función de escala MIN asegura que el logo no se corte
                 $scaleRatio = min($targetW / $imagick->getImageWidth(), $targetH / $imagick->getImageHeight());
                 $newW = (int)($imagick->getImageWidth() * $scaleRatio);
                 $newH = (int)($imagick->getImageHeight() * $scaleRatio);
@@ -320,10 +321,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $roleFontSize = 25; 
     $speakerPhotoCornerRadius = 20; // Radio de redondeo para las fotos de speakers
 
-    // Área reservada para el logo del speaker (Ajustado para uniformidad)
+    // Área reservada para el logo del speaker
     $speakerLogoAreaW = $cardW - $internalPadding * 2; // Ancho disponible (388px)
-    // FIX: Altura fija generosa para asegurar que los logos altos se escalen a un tamaño visible
-    $speakerLogoAreaH = 180; 
     
     $index = 0;
     for ($r = 0; $r < $rows; $r++) {
@@ -422,13 +421,38 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $currentY += count($roleLines) * $lineHeight + 20; // Espacio después del rol
 
             
-            // 🏢 Logo de la Empresa (Tamaño uniforme)
+            // 🏢 Logo de la Empresa (Tamaño condicional)
             $logoUrl = $sp['logo'] ?? null;
             $logoBase = $download_image($logoUrl);
 
             if ($logoBase) {
-                // Usamos el área fija para el logo del speaker (180px H)
-                $logoBase = gi_safe_contain_logo($logoBase, $speakerLogoAreaW, $speakerLogoAreaH, $logoUrl, 'speaker_logo');
+                
+                // --- LÓGICA CONDICIONAL DE TAMAÑO PARA ARREGLAR LOGOS ALTOS ---
+                $logoOriginalW = $logoBase->getImageWidth();
+                $logoOriginalH = $logoBase->getImageHeight();
+                
+                // Solo si las dimensiones son válidas, calculamos AR
+                if ($logoOriginalW > 0 && $logoOriginalH > 0) {
+                    $aspectRatio = $logoOriginalW / $logoOriginalH;
+                } else {
+                    $aspectRatio = 0; // Para forzar el tamaño grande si no se puede determinar
+                }
+
+                // Altura base para logos anchos (AR >= 1.5)
+                $targetLogoH = 120; // Altura máxima que el usuario consideraba correcta para la mayoría de logos
+
+                // Si el logo es alto o cuadrado (AR < 1.5), le damos la altura extra de 180px
+                if ($aspectRatio > 0 && $aspectRatio < 1.5) {
+                    $targetLogoH = 180; // El tamaño que arregla Gran Canaria y FEHT
+                    error_log("Logo '$logoUrl' (AR: $aspectRatio) es alto/cuadrado, se le asigna altura: 180px");
+                } else {
+                    error_log("Logo '$logoUrl' (AR: $aspectRatio) es ancho, se le asigna altura: 120px");
+                }
+                
+                // Usamos el targetH condicional
+                $logoBase = gi_safe_contain_logo($logoBase, $speakerLogoAreaW, $targetLogoH, $logoUrl, 'speaker_logo');
+                // --- FIN LÓGICA CONDICIONAL DE TAMAÑO ---
+
                 if ($logoBase) {
                     $logoW = $logoBase->getImageWidth();
                     $logoH = $logoBase->getImageHeight();
@@ -455,7 +479,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cardCanvas->destroy();
         }
     }
-    error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto de elevación mínima (5%). Logos de speakers uniformes (180px H max).");
+    error_log("🎤 Grid de tarjetas 2x3 generado con logos de speakers de tamaño condicional (180px para altos, 120px para anchos).");
 
 
     // --- 2b. BARRA DE SPONSORS (Horizontal, Sin Título y Logos Grandes) ---
@@ -575,7 +599,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
     // Actualizar nombre de archivo para reflejar la versión
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v20.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v21.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -604,7 +628,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V20): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V21): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
