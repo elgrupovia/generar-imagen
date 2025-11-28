@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.9.0
+ * Version: 2.10.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjetas Blancas (V2.9.0)');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjetas Elevadas/Flotantes');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -146,7 +146,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con FIX DE COMPOSICIÓN para Tarjetas de Speakers Blancas');
+    error_log('🚀 Ejecutando con Tarjetas de Speakers Flotantes');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -260,13 +260,22 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $gridH = $gridAreaH - 2 * $gridMarginTB; // 1174px
 
     $gridXStart = $marginLR; // 80px
-    $gridYStart = $cardsSectionY + $gridMarginTB; // 877px
 
     $gapX = intval($W * 0.03); // 48px
     $gapY = intval($gridH * 0.04); // 46px
 
     $cardW = intval(($gridW - ($cols - 1) * $gapX) / $cols); // 448px
     $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows); // 564px
+    
+    // << INICIO DEL CAMBIO: EFECTO DE ELEVACIÓN >>
+    // 1. Definir la cantidad de solapamiento (Usamos 35% de la altura de la tarjeta)
+    $overlapPercentage = 0.35; 
+    $overlapAmount = intval($cardH * $overlapPercentage); // Aprox 197px
+
+    // 2. El punto de inicio Y del grid es el borde inferior del banner ($bannerH) menos el solapamiento.
+    // Esto hace que la primera fila de tarjetas se superponga al banner.
+    $gridYStart = $bannerH - $overlapAmount; // 840px - 197px = 643px
+    // << FIN DEL CAMBIO: EFECTO DE ELEVACIÓN >>
 
     
     // --- Dimensiones Internas de la Tarjeta ---
@@ -394,7 +403,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
 
             // 6. Componer el contenido en el contenedor BLANCO/Sombra
-            // El offset es necesario para centrar el contenido en el espacio no-sombra
             $cardCanvas->compositeImage($internalContentCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
             $internalContentCanvas->destroy();
 
@@ -403,7 +411,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cardCanvas->destroy();
         }
     }
-    error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO garantizado.");
+    error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto flotante.");
 
     // --- 2b. BARRA DE SPONSORS (Aprox. 20% de la sección 65%) ---
     $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 312px
@@ -490,7 +498,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v7.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v8.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -519,7 +527,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V7): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V8): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
