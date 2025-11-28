@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.12.0
+ * Version: 2.13.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjetas Mínimamente Elevadas');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjeta Horizontal de Sponsors');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -146,7 +146,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con Tarjetas de Speakers Mínimamente Flotantes');
+    error_log('🚀 Ejecutando con Tarjetas de Speakers Mínimamente Flotantes y Tarjeta de Sponsors Horizontal');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -267,27 +267,20 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $cardW = intval(($gridW - ($cols - 1) * $gapX) / $cols); // 448px
     $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows); // 564px
     
-    // << INICIO DEL CAMBIO: EFECTO DE ELEVACIÓN MÍNIMA >>
-    // 1. Definir la cantidad de solapamiento (Ajustado a 5% de la altura de la tarjeta)
-    $overlapPercentage = 0.05; // ¡CAMBIO AQUÍ! De 0.15 a 0.05
-    $overlapAmount = intval($cardH * $overlapPercentage); // Aprox 28px (Solapamiento mínimo)
-
-    // 2. El punto de inicio Y del grid es el borde inferior del banner ($bannerH) menos el solapamiento.
+    // << EFECTO DE ELEVACIÓN MÍNIMA (5%) >>
+    $overlapPercentage = 0.05; 
+    $overlapAmount = intval($cardH * $overlapPercentage); 
     $gridYStart = $bannerH - $overlapAmount; // 840px - 28px = 812px
-    // << FIN DEL CAMBIO: EFECTO DE ELEVACIÓN MÍNIMA >>
 
     
-    // --- Dimensiones Internas de la Tarjeta ---
-    $photoSize = intval($cardW * 0.70); // Foto CUADRADA, 70% del ancho (313px)
-    $photoMarginTop = intval($cardH * 0.05); // 5% de la altura (28px)
-    
+    // --- Dimensiones Internas Comunes ---
+    $photoSize = intval($cardW * 0.70); // Foto CUADRADA
+    $photoMarginTop = intval($cardH * 0.05); 
     $nameFontSize = 40; 
     $roleFontSize = 25; 
-    
-    $logoMaxH = intval($cardH * 0.10); // Altura máxima para el logo (56px)
-    
-    $internalPadding = 30; // Para el espacio interior del texto
-    $shadowMargin = 15; // Margen para la sombra
+    $logoMaxH = intval($cardH * 0.10); 
+    $internalPadding = 30; 
+    $shadowMargin = 15; 
 
     $index = 0;
     for ($r = 0; $r < $rows; $r++) {
@@ -308,21 +301,21 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             // 2. Crear la sombra (objeto transparente + shadow)
             $shadowBase = clone $cardCanvas;
             $shadowBase->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)')); 
-            $shadowBase->shadowImage(80, 5, 0, 0); // Aplica la sombra
+            $shadowBase->shadowImage(80, 5, 0, 0); 
 
             // 3. Crear el contenedor final (sombra + tarjeta blanca + contenido)
             $cardContainer = new Imagick();
             $cardContainer->newImage($cardW + $shadowMargin*2, $cardH + $shadowMargin*2, new ImagickPixel('transparent'));
             $cardContainer->setImageFormat('png');
 
-            // 4. Componer la sombra (como fondo del contenedor)
+            // 4. Componer la sombra 
             $cardContainer->compositeImage($shadowBase, Imagick::COMPOSITE_OVER, 0, 0); 
             $shadowBase->destroy();
 
             // 5. Componer la tarjeta BLANCA limpia encima de la sombra
             $cardContainer->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
             $cardCanvas->destroy();
-            $cardCanvas = $cardContainer; // Ahora $cardCanvas es el contenedor final con sombra y fondo BLANCO
+            $cardCanvas = $cardContainer; 
             
             // Calculo de posición para el lienzo principal
             $x = $gridXStart + $c * ($cardW + $gapX) - $shadowMargin; 
@@ -333,7 +326,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $internalContentCanvas->newImage($cardW, $cardH, new ImagickPixel('transparent'));
             $internalContentCanvas->setImageFormat('png');
 
-            $currentY = $photoMarginTop; // 28px
+            $currentY = $photoMarginTop; 
             
             // 📷 Foto Cuadrada
             $photoUrl = $sp['photo'] ?? null;
@@ -412,107 +405,138 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     }
     error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto de elevación mínima (5%).");
 
-    // --- 2b. BARRA DE SPONSORS (Aprox. 20% de la sección 65%) ---
-    $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 312px
-    
-    // Calcula el Y final de la última fila de tarjetas
-    $lastCardRowYEnd = $gridYStart + ($rows - 1) * ($cardH + $gapY) + $cardH;
-    
-    // Coloca la barra de patrocinadores justo debajo de la última fila de tarjetas + la mitad del gap vertical para mantener algo de separación.
-    $sectionPatrocinadoresY = $lastCardRowYEnd + ($gapY / 2); 
 
-    $patrocinadoresCanvas = new Imagick();
-    // Aseguramos que la altura de la barra de patrocinadores no se salga del lienzo
-    $calculatedH = $H - $sectionPatrocinadoresY;
-    if ($calculatedH < 100) $calculatedH = 100; // Mínimo de 100px si los cálculos anteriores redujeron mucho el espacio
+    // --- 2b. BARRA DE SPONSORS (Nueva Tarjeta Horizontal Elevada) ---
+
+    // 1. Calcular posición Y: Justo después de la última fila de speakers + un gap
+    $lastCardRowYEnd = $gridYStart + ($rows - 1) * ($cardH + $gapY) + $cardH;
+    $gapBeforeSponsors = $gapY; // Espacio entre speakers y patrocinadores
+    $sponsorCardYStart = $lastCardRowYEnd + $gapBeforeSponsors; 
+
+    // 2. Dimensiones
+    $sponsorCardW = $W - 2 * $marginLR; // Ancho casi completo
+    $sponsorCardH = 150; // Altura corta (fija)
+
+    $cardX = $marginLR - $shadowMargin;
+    $cardY = $sponsorCardYStart - $shadowMargin;
+    $cornerRadius = 20;
     
-    $patrocinadoresCanvas->newImage($W, $calculatedH, new ImagickPixel('#FFFFFF')); 
-    $patrocinadoresCanvas->setImageFormat('png');
-    
+    // --- 2.1. Crear la tarjeta base (Blanca, Redondeada y con Sombra) ---
+    $patrocinadoresCard = new Imagick();
+    $patrocinadoresCard->newImage($sponsorCardW, $sponsorCardH, new ImagickPixel('#FFFFFF'));
+    $patrocinadoresCard->setImageFormat('png');
+    $patrocinadoresCard = gi_round_corners($patrocinadoresCard, $cornerRadius);
+
+    // Sombra
+    $shadowBase = clone $patrocinadoresCard;
+    $shadowBase->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)')); 
+    $shadowBase->shadowImage(80, 5, 0, 0); 
+
+    // Contenedor
+    $cardContainer = new Imagick();
+    $cardContainer->newImage($sponsorCardW + $shadowMargin*2, $sponsorCardH + $shadowMargin*2, new ImagickPixel('transparent'));
+    $cardContainer->setImageFormat('png');
+
+    $cardContainer->compositeImage($shadowBase, Imagick::COMPOSITE_OVER, 0, 0); 
+    $shadowBase->destroy();
+    $cardContainer->compositeImage($patrocinadoresCard, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
+    $patrocinadoresCard->destroy();
+    $sponsorCanvas = $cardContainer; 
+
+    // --- 2.2. CONTENIDO INTERNO: Título y Logos ---
+    $contentCanvas = new Imagick();
+    $contentCanvas->newImage($sponsorCardW, $sponsorCardH, new ImagickPixel('transparent'));
+    $contentCanvas->setImageFormat('png');
+
+
     $sponsorLogos = array_merge($payload['logos'] ?? [], $payload['sponsors'] ?? []);
     
-    if (!empty($sponsorLogos)) {
-        
-        // ✍️ Título "Sponsors:"
-        $drawSponsorTitle = new ImagickDraw();
-        if (file_exists($fontPath)) $drawSponsorTitle->setFont($fontPath);
-        $drawSponsorTitle->setFillColor('#333333'); 
-        $drawSponsorTitle->setFontSize(30); 
-        $drawSponsorTitle->setFontWeight(700);
-        $drawSponsorTitle->setTextAlignment(Imagick::ALIGN_CENTER);
-        
-        $sponsorTitleText = 'Sponsors:';
-        $metricsST = $patrocinadoresCanvas->queryFontMetrics($drawSponsorTitle, $sponsorTitleText);
-        
-        $titleY = 30 + $metricsST['textHeight'];
-        
-        // Si hay espacio, se dibuja el título
-        if ($calculatedH > $titleY + 10) {
-            $patrocinadoresCanvas->annotateImage($drawSponsorTitle, $W / 2, $titleY, 0, $sponsorTitleText);
-            $logosYStart = $titleY + 10; 
-        } else {
-            $logosYStart = 10;
-        }
+    // ✍️ Título "Sponsors:"
+    $drawSponsorTitle = new ImagickDraw();
+    if (file_exists($fontPath)) $drawSponsorTitle->setFont($fontPath);
+    $drawSponsorTitle->setFillColor('#333333'); 
+    $drawSponsorTitle->setFontSize(30); 
+    $drawSponsorTitle->setFontWeight(700);
+    
+    $sponsorTitleText = 'Sponsors:';
+    $metricsST = $contentCanvas->queryFontMetrics($drawSponsorTitle, $sponsorTitleText);
 
-        $logosAreaH = $calculatedH - $logosYStart - 10; 
-        
-        $logoMaxH = intval($logosAreaH * 0.80); 
-        $logoAreaW = $W - 2 * $marginLR; 
-        $logoSpacing = 40; 
-        
-        $logosToCompose = [];
-        $currentXWidth = 0; 
+    // Posición del título
+    $titleX = $internalPadding; // 30px
+    $titleY = ($sponsorCardH - $metricsST['textHeight']) / 2 + $metricsST['textHeight'] / 2; 
+    $contentCanvas->annotateImage($drawSponsorTitle, $titleX, $titleY, 0, $sponsorTitleText);
 
-        // 1. Pre-cargar y dimensionar logos para calcular ancho total
-        foreach ($sponsorLogos as $logoData) {
-            $logoUrl = $logoData['photo'] ?? null;
-            if (!$logoUrl) continue;
 
-            $logoBase = $download_image($logoUrl);
+    // Área para los Logos (todo el resto del espacio)
+    $logosXStart = $titleX + $metricsST['textWidth'] + 40; 
+    $logosAreaW = $sponsorCardW - $logosXStart - $internalPadding;
+    $logosAreaH = $sponsorCardH - 2 * $internalPadding; // Área interior vertical (90px)
+    
+    $logoMaxH = $logosAreaH; 
+    $logoSpacing = 40; 
+    
+    $logosToCompose = [];
+    $currentXWidth = 0; 
+    $logoCount = 0; 
+
+    // 1. Pre-cargar y dimensionar logos para calcular ancho total
+    foreach ($sponsorLogos as $logoData) {
+        $logoUrl = $logoData['photo'] ?? null;
+        if (!$logoUrl) continue;
+
+        $logoBase = $download_image($logoUrl);
+        if ($logoBase) {
+            $logoBase = gi_safe_contain_logo($logoBase, $logosAreaW, $logoMaxH, $logoUrl, 'sponsor_logo');
             if ($logoBase) {
-                $logoBase = gi_safe_contain_logo($logoBase, $logoAreaW, $logoMaxH, $logoUrl, 'sponsor_logo');
-                if ($logoBase) {
-                    $logoW = $logoBase->getImageWidth();
-                    if ($currentXWidth + $logoW + ($currentXWidth > 0 ? $logoSpacing : 0) <= $logoAreaW) {
-                         $logosToCompose[] = $logoBase;
-                         $currentXWidth += $logoW + $logoSpacing;
-                    } else {
-                         $logoBase->destroy();
-                    }
+                $logoW = $logoBase->getImageWidth();
+                
+                // Si el logo cabe, lo añadimos
+                if ($currentXWidth + $logoW + ($logoCount > 0 ? $logoSpacing : 0) <= $logosAreaW) {
+                     $logosToCompose[] = $logoBase;
+                     $currentXWidth += $logoW + ($logoCount > 0 ? $logoSpacing : 0);
+                     $logoCount++;
+                } else {
+                     $logoBase->destroy();
                 }
             }
         }
-        
-        // 2. Componer logos centrados
-        if (!empty($logosToCompose)) {
-            $currentXWidth -= $logoSpacing; // Eliminar el último espaciado sobrante
-            $startX = $marginLR + ($logoAreaW - $currentXWidth) / 2; 
-
-            $currentX = $startX;
-
-            foreach ($logosToCompose as $logoBase) {
-                $logoW = $logoBase->getImageWidth();
-                $logoH = $logoBase->getImageHeight();
-                
-                $logoY = $logosYStart + ($logosAreaH - $logoH) / 2;
-                
-                $patrocinadoresCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
-                $logoBase->destroy();
-                
-                $currentX += $logoW + $logoSpacing;
-            }
-            error_log("⭐ Sección de patrocinadores generada con logos centrados.");
-        } else {
-            error_log("⚠️ No hay logos válidos para generar la barra de sponsors.");
-        }
     }
     
-    $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, 0, intval($sectionPatrocinadoresY));
-    $patrocinadoresCanvas->destroy();
+    // 2. Componer logos (Centrados en el espacio disponible después del título)
+    if (!empty($logosToCompose)) {
+        $currentXWidth -= ($logoCount > 0 ? $logoSpacing : 0); // Ancho total sin el último gap
+        $remainingSpaceInArea = $logosAreaW - $currentXWidth;
+        
+        $currentX = $logosXStart + ($remainingSpaceInArea / 2); // Inicia en el X calculado + el espacio sobrante dividido por 2
+        
+        foreach ($logosToCompose as $logoBase) {
+            $logoW = $logoBase->getImageWidth();
+            $logoH = $logoBase->getImageHeight();
+            
+            $logoY = $internalPadding + ($logosAreaH - $logoH) / 2; // Centrado verticalmente
+            
+            $contentCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
+            $logoBase->destroy();
+            
+            $currentX += $logoW + $logoSpacing;
+        }
+        error_log("⭐ Tarjeta de patrocinadores horizontal generada con $logoCount logos.");
+    } else {
+        error_log("⚠️ No hay logos válidos para generar la tarjeta de sponsors.");
+    }
+    
+    // 3. Componer Contenido en la Tarjeta
+    $sponsorCanvas->compositeImage($contentCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
+    $contentCanvas->destroy();
+
+    // 4. Componer la tarjeta completa en el lienzo principal
+    $img->compositeImage($sponsorCanvas, Imagick::COMPOSITE_OVER, intval($cardX), intval($cardY));
+    $sponsorCanvas->destroy();
+
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v10.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v11.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -541,7 +565,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V10): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V11): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
