@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.13.0
+ * Version: 2.14.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjeta Horizontal de Sponsors');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjeta Horizontal de Sponsors (Centrada y Más Larga)');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -146,7 +146,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con Tarjetas de Speakers Mínimamente Flotantes y Tarjeta de Sponsors Horizontal');
+    error_log('🚀 Ejecutando con Tarjetas de Speakers Mínimamente Flotantes y Tarjeta de Sponsors Horizontal (Centrada y Más Larga)');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -406,17 +406,17 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto de elevación mínima (5%).");
 
 
-    // --- 2b. BARRA DE SPONSORS (Nueva Tarjeta Horizontal Elevada) ---
+    // --- 2b. BARRA DE SPONSORS (Nueva Tarjeta Horizontal Elevada, Centrada y Más Larga) ---
 
     // 1. Calcular posición Y: Justo después de la última fila de speakers + un gap
     $lastCardRowYEnd = $gridYStart + ($rows - 1) * ($cardH + $gapY) + $cardH;
-    $gapBeforeSponsors = $gapY; // Espacio entre speakers y patrocinadores
+    $gapBeforeSponsors = $gapY; 
     $sponsorCardYStart = $lastCardRowYEnd + $gapBeforeSponsors; 
 
     // 2. Dimensiones
-    $sponsorCardW = $W - 2 * $marginLR; // Ancho casi completo
-    $sponsorCardH = 150; // Altura corta (fija)
-
+    $sponsorCardW = $W - 2 * $marginLR; 
+    $sponsorCardH = 200; // ¡CAMBIO AQUÍ! Aumentado a 200px
+    
     $cardX = $marginLR - $shadowMargin;
     $cardY = $sponsorCardYStart - $shadowMargin;
     $cornerRadius = 20;
@@ -457,21 +457,22 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $drawSponsorTitle->setFillColor('#333333'); 
     $drawSponsorTitle->setFontSize(30); 
     $drawSponsorTitle->setFontWeight(700);
+    $drawSponsorTitle->setTextAlignment(Imagick::ALIGN_CENTER); // ¡CAMBIO AQUÍ! Centrado
     
     $sponsorTitleText = 'Sponsors:';
     $metricsST = $contentCanvas->queryFontMetrics($drawSponsorTitle, $sponsorTitleText);
 
-    // Posición del título
-    $titleX = $internalPadding; // 30px
-    $titleY = ($sponsorCardH - $metricsST['textHeight']) / 2 + $metricsST['textHeight'] / 2; 
+    // Posición del título: Centrado horizontalmente
+    $titleX = $sponsorCardW / 2;
+    $titleY = $internalPadding + $metricsST['textHeight']; // Un poco más abajo del padding superior
     $contentCanvas->annotateImage($drawSponsorTitle, $titleX, $titleY, 0, $sponsorTitleText);
 
 
-    // Área para los Logos (todo el resto del espacio)
-    $logosXStart = $titleX + $metricsST['textWidth'] + 40; 
-    $logosAreaW = $sponsorCardW - $logosXStart - $internalPadding;
-    $logosAreaH = $sponsorCardH - 2 * $internalPadding; // Área interior vertical (90px)
-    
+    // Área para los Logos (debajo del título, centrados)
+    $logosYStart = $titleY + 15; // Un poco de espacio después del título
+    $logosAreaH = $sponsorCardH - $logosYStart - $internalPadding; 
+    $logosAreaW = $sponsorCardW - 2 * $internalPadding;
+
     $logoMaxH = $logosAreaH; 
     $logoSpacing = 40; 
     
@@ -502,18 +503,18 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
     
-    // 2. Componer logos (Centrados en el espacio disponible después del título)
+    // 2. Componer logos (Centrados en el área disponible)
     if (!empty($logosToCompose)) {
         $currentXWidth -= ($logoCount > 0 ? $logoSpacing : 0); // Ancho total sin el último gap
         $remainingSpaceInArea = $logosAreaW - $currentXWidth;
         
-        $currentX = $logosXStart + ($remainingSpaceInArea / 2); // Inicia en el X calculado + el espacio sobrante dividido por 2
+        $currentX = $internalPadding + ($remainingSpaceInArea / 2); 
         
         foreach ($logosToCompose as $logoBase) {
             $logoW = $logoBase->getImageWidth();
             $logoH = $logoBase->getImageHeight();
             
-            $logoY = $internalPadding + ($logosAreaH - $logoH) / 2; // Centrado verticalmente
+            $logoY = $logosYStart + ($logosAreaH - $logoH) / 2; // Centrado verticalmente en su área
             
             $contentCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
             $logoBase->destroy();
@@ -536,7 +537,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v11.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v12.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -565,7 +566,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V11): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V12): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
