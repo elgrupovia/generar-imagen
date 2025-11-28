@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.14.0
+ * Version: 2.16.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjeta Horizontal de Sponsors (Centrada y Más Larga)');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Tarjeta Horizontal de Sponsors (Sin Título y Logos Grandes)');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -39,7 +39,7 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
                 if ($context === 'speaker' || $context === 'speaker_circular') {
                     $y_offset = (int)(($newH - $h) * 0.20); 
                 } else {
-                    $y_offset = (int)(($newH - $h) / 2); 
+                    $y_offset = (int)(($newW - $w) / 2); 
                 }
                 
                 $imagick->cropImage($w, $h, $x_offset, $y_offset);
@@ -146,7 +146,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con Tarjetas de Speakers Mínimamente Flotantes y Tarjeta de Sponsors Horizontal (Centrada y Más Larga)');
+    error_log('🚀 Ejecutando con Tarjetas de Speakers Mínimamente Flotantes y Tarjeta de Sponsors Horizontal (Sin Título y Logos Grandes)');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -406,16 +406,18 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     error_log("🎤 Grid de tarjetas 2x3 generado con fondo BLANCO y efecto de elevación mínima (5%).");
 
 
-    // --- 2b. BARRA DE SPONSORS (Nueva Tarjeta Horizontal Elevada, Centrada y Más Larga) ---
+    // --- 2b. BARRA DE SPONSORS (Nueva Tarjeta Horizontal Elevada, Sin Título y Logos Grandes) ---
 
     // 1. Calcular posición Y: Justo después de la última fila de speakers + un gap
     $lastCardRowYEnd = $gridYStart + ($rows - 1) * ($cardH + $gapY) + $cardH;
-    $gapBeforeSponsors = $gapY; 
+    
+    // Aumentar el gap vertical para bajar la tarjeta.
+    $gapBeforeSponsors = intval($gapY * 1.5); 
     $sponsorCardYStart = $lastCardRowYEnd + $gapBeforeSponsors; 
 
     // 2. Dimensiones
     $sponsorCardW = $W - 2 * $marginLR; 
-    $sponsorCardH = 200; // ¡CAMBIO AQUÍ! Aumentado a 200px
+    $sponsorCardH = 200; // Altura de la tarjeta
     
     $cardX = $marginLR - $shadowMargin;
     $cardY = $sponsorCardYStart - $shadowMargin;
@@ -443,7 +445,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $patrocinadoresCard->destroy();
     $sponsorCanvas = $cardContainer; 
 
-    // --- 2.2. CONTENIDO INTERNO: Título y Logos ---
+    // --- 2.2. CONTENIDO INTERNO: Solo Logos (Aprovechando el espacio) ---
     $contentCanvas = new Imagick();
     $contentCanvas->newImage($sponsorCardW, $sponsorCardH, new ImagickPixel('transparent'));
     $contentCanvas->setImageFormat('png');
@@ -451,29 +453,14 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     $sponsorLogos = array_merge($payload['logos'] ?? [], $payload['sponsors'] ?? []);
     
-    // ✍️ Título "Sponsors:"
-    $drawSponsorTitle = new ImagickDraw();
-    if (file_exists($fontPath)) $drawSponsorTitle->setFont($fontPath);
-    $drawSponsorTitle->setFillColor('#333333'); 
-    $drawSponsorTitle->setFontSize(30); 
-    $drawSponsorTitle->setFontWeight(700);
-    $drawSponsorTitle->setTextAlignment(Imagick::ALIGN_CENTER); // ¡CAMBIO AQUÍ! Centrado
-    
-    $sponsorTitleText = 'Sponsors:';
-    $metricsST = $contentCanvas->queryFontMetrics($drawSponsorTitle, $sponsorTitleText);
+    // ✍️ Título "Sponsors:" -> BLOQUE ELIMINADO
 
-    // Posición del título: Centrado horizontalmente
-    $titleX = $sponsorCardW / 2;
-    $titleY = $internalPadding + $metricsST['textHeight']; // Un poco más abajo del padding superior
-    $contentCanvas->annotateImage($drawSponsorTitle, $titleX, $titleY, 0, $sponsorTitleText);
-
-
-    // Área para los Logos (debajo del título, centrados)
-    $logosYStart = $titleY + 15; // Un poco de espacio después del título
-    $logosAreaH = $sponsorCardH - $logosYStart - $internalPadding; 
+    // Área para los Logos: Ocupa casi todo el espacio vertical.
+    $logosYStart = $internalPadding; // 30px (desde el borde superior)
+    $logosAreaH = $sponsorCardH - 2 * $internalPadding; // 200 - 60 = 140px (Más grandes)
     $logosAreaW = $sponsorCardW - 2 * $internalPadding;
 
-    $logoMaxH = $logosAreaH; 
+    $logoMaxH = $logosAreaH; // Máxima altura permitida para cada logo
     $logoSpacing = 40; 
     
     $logosToCompose = [];
@@ -487,6 +474,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
         $logoBase = $download_image($logoUrl);
         if ($logoBase) {
+            // Se usa el nuevo y mayor logoMaxH (140px)
             $logoBase = gi_safe_contain_logo($logoBase, $logosAreaW, $logoMaxH, $logoUrl, 'sponsor_logo');
             if ($logoBase) {
                 $logoW = $logoBase->getImageWidth();
@@ -505,23 +493,23 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     
     // 2. Componer logos (Centrados en el área disponible)
     if (!empty($logosToCompose)) {
-        $currentXWidth -= ($logoCount > 0 ? $logoSpacing : 0); // Ancho total sin el último gap
+        $currentXWidth -= ($logoCount > 0 ? $logoSpacing : 0); 
         $remainingSpaceInArea = $logosAreaW - $currentXWidth;
         
-        $currentX = $internalPadding + ($remainingSpaceInArea / 2); 
+        $currentX = $internalPadding + ($remainingSpaceInArea / 2); // Centrado horizontalmente
         
         foreach ($logosToCompose as $logoBase) {
             $logoW = $logoBase->getImageWidth();
             $logoH = $logoBase->getImageHeight();
             
-            $logoY = $logosYStart + ($logosAreaH - $logoH) / 2; // Centrado verticalmente en su área
+            $logoY = $logosYStart + ($logosAreaH - $logoH) / 2; // Centrado verticalmente
             
             $contentCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
             $logoBase->destroy();
             
             $currentX += $logoW + $logoSpacing;
         }
-        error_log("⭐ Tarjeta de patrocinadores horizontal generada con $logoCount logos.");
+        error_log("⭐ Tarjeta de patrocinadores horizontal generada (Sin título, $logoCount logos grandes).");
     } else {
         error_log("⚠️ No hay logos válidos para generar la tarjeta de sponsors.");
     }
@@ -537,7 +525,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v12.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v14.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -566,7 +554,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V12): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V14): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
