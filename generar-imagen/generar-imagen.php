@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.17.0
+ * Version: 2.18.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Logo Corporativo Arriba Derecha');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Logo Corporativo Más Pequeño y Fotos de Speakers Circulares');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -116,6 +116,37 @@ function gi_round_corners($imagick, $radius) {
         return $imagick;
     }
 }
+
+/**
+ * Aplica una máscara circular a una imagen.
+ */
+function gi_circle_image($imagick) {
+    if (!$imagick) return $imagick;
+
+    try {
+        $width = $imagick->getImageWidth();
+        $height = $imagick->getImageHeight();
+        $radius = min($width, $height) / 2;
+
+        $mask = new Imagick();
+        $mask->newImage($width, $height, new ImagickPixel('transparent'));
+        $mask->setImageFormat('png');
+
+        $draw = new ImagickDraw();
+        $draw->setFillColor(new ImagickPixel('white'));
+        $draw->circle($width / 2, $height / 2, $width / 2, 0);
+        $mask->drawImage($draw);
+        
+        $imagick->compositeImage($mask, Imagick::COMPOSITE_COPYOPACITY, 0, 0); 
+        $mask->destroy();
+        
+        return $imagick;
+    } catch (Exception $e) {
+        error_log("❌ Error al aplicar máscara circular: ".$e->getMessage());
+        return $imagick;
+    }
+}
+
 
 /**
  * Envuelve el texto a una anchura máxima.
@@ -249,7 +280,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         }
     }
     
-    // --- 1b. LOGO CORPORATIVO (Top-Right) ---
+    // --- 1b. LOGO CORPORATIVO (Top-Right, más pequeño) ---
     $logoFileName = 'LOGO_GRUPO_VIA_CMYK_BLANCO.png';
     $logoCorpPath = dirname(__FILE__) . '/' . $logoFileName;
     $logoCorp = null;
@@ -258,9 +289,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         try {
             $logoCorp = new Imagick($logoCorpPath);
             
-            // Dimensionamiento
-            $logoCorpMaxW = intval($W * 0.25);
-            $logoCorpMaxH = intval($bannerH * 0.20);
+            // Dimensionamiento (reducido al 15% del ancho del banner)
+            $logoCorpMaxW = intval($W * 0.15); // Antes 25%
+            $logoCorpMaxH = intval($bannerH * 0.12); // Ajustado para mantener proporción con nuevo ancho
             
             $logoCorp = gi_safe_contain_logo($logoCorp, $logoCorpMaxW, $logoCorpMaxH, $logoCorpPath, 'corporate_logo');
             
@@ -274,7 +305,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 
                 $img->compositeImage($logoCorp, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
                 $logoCorp->destroy();
-                error_log("🏢 Logo corporativo compuesto en la esquina superior derecha.");
+                error_log("🏢 Logo corporativo compuesto en la esquina superior derecha (más pequeño).");
             }
         } catch (Exception $e) {
             error_log("❌ Error cargando/componiendo logo corporativo: " . $e->getMessage());
@@ -366,17 +397,21 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
             $currentY = $photoMarginTop; 
             
-            // 📷 Foto Cuadrada
+            // 📷 Foto Circular
             $photoUrl = $sp['photo'] ?? null;
             $photoBase = $download_image($photoUrl);
 
             if ($photoBase) {
-                $photoBase = safe_thumbnail($photoBase, $photoSize, $photoSize, $photoUrl, 'speaker');
+                // Redimensionar para cubrir y luego recortar al tamaño cuadrado de la foto circular
+                $photoBase = safe_thumbnail($photoBase, $photoSize, $photoSize, $photoUrl, 'speaker_circular');
                 if ($photoBase) {
-                    $photoX = ($cardW - $photoSize) / 2;
-                    $internalContentCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), intval($currentY));
-                    $photoBase->destroy();
-                    $currentY += $photoSize + 25; // Espacio después de la foto
+                    $photoBase = gi_circle_image($photoBase); // Aplicar máscara circular
+                    if ($photoBase) {
+                        $photoX = ($cardW - $photoSize) / 2;
+                        $internalContentCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), intval($currentY));
+                        $photoBase->destroy();
+                        $currentY += $photoSize + 25; // Espacio después de la foto
+                    }
                 }
             }
             
@@ -560,7 +595,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v14.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v15.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -589,7 +624,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Final V14): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final V15): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
