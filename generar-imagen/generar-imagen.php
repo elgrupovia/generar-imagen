@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
  * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.4.0
+ * Version: 2.5.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional con Sponsors Bar');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional con Sponsors Bar (Fix Composición)');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -179,7 +179,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Iniciando plugin Evento Inmobiliario Pro - Nuevo Diseño A4 con Sponsors Bar');
+    error_log('🚀 Ejecutando FIX de composición para A4 con Sponsors Bar');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -201,6 +201,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     
     $upload_dir = wp_upload_dir();
     $base_dir = $upload_dir['basedir'];
+    // Se fuerza a usar Montserrat si existe, si no, se confía en el fallback por defecto
     $montserratBlackPath = $base_dir . '/fonts/Montserrat-Black.ttf';
     $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
@@ -248,14 +249,19 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         return $m;
     };
 
+    // --- DATOS DEL PAYLOAD ---
+    $bannerImageUrl = $payload['banner_image']['photo'] ?? null;
+    $speakers = $payload['speakers'] ?? [];
+    $totalSpeakers = count($speakers);
+    $cols = 3;
+    $rows = 2; 
+    $maxSpeakers = $cols * $rows; 
+
+
     // --- 1. BANNER SUPERIOR (35% H) ---
     $bannerH = intval($H * 0.35); // 840px
     $bannerY = 0;
     
-    $bannerImageUrl = $payload['banner_image']['photo'] ?? null;
-    $bannerTitle = $payload['banner_title'] ?? 'Evento Corporativo Inmobiliario'; 
-    $eventDetails = $payload['event_details'] ?? '6 NOVIEMBRE 2026 | 9:00H | SILKEN PUERTA VALENCIA';
-
     if ($bannerImageUrl) {
         $bg_image = $download_image($bannerImageUrl);
         if ($bg_image) {
@@ -296,7 +302,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     
     $metricsDetails = $img->queryFontMetrics($drawDetails, $eventDetails);
 
-    $totalTextHeight = $metricsTitle['textHeight'] + 20 + $metricsDetails['textHeight']; // 20px de espaciado
+    $totalTextHeight = $metricsTitle['textHeight'] + 20 + $metricsDetails['textHeight']; 
     $titleY = $bannerY + ($bannerH / 2) - ($totalTextHeight / 2) + $metricsTitle['textHeight'] - 10;
     
     $img->annotateImage($drawTitle, $W / 2, $titleY, 0, $bannerTitle);
@@ -310,38 +316,25 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // --- 2a. GRID DE TARJETAS (Aprox. 80% de la sección 65%) ---
     $gridAreaH = intval($cardsSectionH * 0.80); // 1248px
-    $gridYStart = $cardsSectionY; // Empieza justo debajo del banner
-
-    // 5% Margen exterior de la sección de tarjetas (izq/der)
-    $marginLR = intval($W * 0.05); // 80px
     
-    // 3% Margen superior/inferior para el grid (del área del grid)
+    $marginLR = intval($W * 0.05); // 80px
     $gridMarginTB = intval($gridAreaH * 0.03); // 37px
     
     $gridW = $W - 2 * $marginLR; // 1440px
     $gridH = $gridAreaH - 2 * $gridMarginTB; // 1174px
 
     $gridXStart = $marginLR; // 80px
-    $gridYStart = $cardsSectionY + $gridMarginTB; // 840 + 37 = 877px
+    $gridYStart = $cardsSectionY + $gridMarginTB; // 877px
 
-    // Espaciado entre tarjetas (3% H, 4% V del grid)
     $gapX = intval($W * 0.03); // 48px
-    $gapY = intval($gridH * 0.04); // 47px
-
-    // Dimensiones de la tarjeta (Más pequeñas/cercanas a cuadrado)
-    $cardW = intval(($gridW - ($cols = 2) * $gapX) / 3); // 448px
-    $cardH = intval(($gridH - ($rows = 1) * $gapY) / 2); // 563px
-    
-    // Reajuste de variables (solo 2 filas x 3 columnas)
-    $cols = 3;
-    $rows = 2;
+    $gapY = intval($gridH * 0.04); // 46px
 
     $cardW = intval(($gridW - ($cols - 1) * $gapX) / $cols); // 448px
-    $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows); // 563px
+    $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows); // 564px
 
     
     // --- Dimensiones Internas de la Tarjeta ---
-    $photoDiameter = intval($cardW * 0.45); // 45% del ancho de la tarjeta (201px)
+    $photoDiameter = intval($cardW * 0.55); // **Aumento de la foto al 55%** (246px)
     $photoMarginTop = intval($cardH * 0.10); // 10% de la altura (56px)
     
     $nameFontSize = 40; 
@@ -377,7 +370,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cardCanvas->destroy();
             $cardCanvas = $cardWithShadow; 
             
-            // Posición de la tarjeta con compensación por la sombra
             $x = $gridXStart + $c * ($cardW + $gapX) - $shadowMargin; 
             $y = $baseY - $shadowMargin;
             
@@ -386,7 +378,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $internalCanvas->newImage($cardW, $cardH, new ImagickPixel('transparent'));
             $internalCanvas->setImageFormat('png');
 
-            $currentY = $photoMarginTop; 
+            $currentY = $photoMarginTop; // 56px
             
             // 📷 Foto Circular
             $photoUrl = $sp['photo'] ?? null;
@@ -397,9 +389,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 if ($photoBase) {
                     $photoBase = gi_circular_mask($photoBase);
                     $photoX = ($cardW - $photoDiameter) / 2;
+                    // FIX: Componer la foto
                     $internalCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), intval($currentY));
                     $photoBase->destroy();
-                    $currentY += $photoDiameter + 20; // Espacio después de la foto
+                    $currentY += $photoDiameter + 25; // Aumentamos espacio después de la foto
                 }
             }
             
@@ -414,8 +407,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             
             $metricsName = $internalCanvas->queryFontMetrics($drawName, $name);
             $nameY = $currentY + $metricsName['textHeight'] / 2;
+            // FIX: Componer el nombre
             $internalCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
-            $currentY += $metricsName['textHeight'] + 5; 
+            $currentY += $metricsName['textHeight'] + 15; // Espacio después del nombre
             
             // ✍️ Rol (Ocupación)
             $drawRole = new ImagickDraw();
@@ -429,13 +423,10 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $roleLines = gi_word_wrap_text($drawRole, $internalCanvas, $role, $cardW - $internalPadding * 2);
             $lineHeight = $roleFontSize + 5; 
             
-            // Centrar el texto en el espacio restante de la tarjeta
-            $textBlockHeight = count($roleLines) * $lineHeight;
-            $remainingSpace = $cardH - $currentY - $internalPadding;
-            $roleYStart = $currentY + ($remainingSpace - $textBlockHeight) / 2;
-
+            // Posicionamiento vertical secuencial y robusto del Rol
             foreach ($roleLines as $i => $line) {
-                $internalCanvas->annotateImage($drawRole, $cardW / 2, $roleYStart + ($i * $lineHeight), 0, $line);
+                // FIX: Componer el rol
+                $internalCanvas->annotateImage($drawRole, $cardW / 2, $currentY + ($i * $lineHeight), 0, $line);
             }
 
             // 🖼️ Componer el contenido en el canvas con sombra
@@ -447,17 +438,16 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cardCanvas->destroy();
         }
     }
-    error_log("🎤 Grid de tarjetas 2x3 generado con éxito.");
+    error_log("🎤 Grid de tarjetas 2x3 generado con éxito (FIX aplicado).");
 
     // --- 2b. BARRA DE SPONSORS (Aprox. 20% de la sección 65%) ---
-    $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 1560 - 1248 = 312px
-    $sectionPatrocinadoresY = $cardsSectionY + $gridAreaH; // 840 + 1248 = 2088px
+    $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 312px
+    $sectionPatrocinadoresY = $cardsSectionY + $gridAreaH; // 2088px
 
     $patrocinadoresCanvas = new Imagick();
-    $patrocinadoresCanvas->newImage($W, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF')); // Fondo blanco
+    $patrocinadoresCanvas->newImage($W, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF')); 
     $patrocinadoresCanvas->setImageFormat('png');
     
-    // Recopilar todos los logos
     $sponsorLogos = array_merge($payload['logos'] ?? [], $payload['sponsors'] ?? []);
     
     if (!empty($sponsorLogos)) {
@@ -473,19 +463,20 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $sponsorTitleText = 'Sponsors:';
         $metricsST = $patrocinadoresCanvas->queryFontMetrics($drawSponsorTitle, $sponsorTitleText);
         
-        // Posicionar el título cerca del top (ej. 30px abajo)
         $titleY = 30 + $metricsST['textHeight'];
         $patrocinadoresCanvas->annotateImage($drawSponsorTitle, $W / 2, $titleY, 0, $sponsorTitleText);
 
-        $logosYStart = $titleY + 10; // Espacio debajo del título
-        $logosAreaH = $sectionPatrocinadoresH - $logosYStart - 10; // Altura restante - margen inferior
+        $logosYStart = $titleY + 10; 
+        $logosAreaH = $sectionPatrocinadoresH - $logosYStart - 10; 
         
-        $logoMaxH = intval($logosAreaH * 0.80); // Altura máxima para un logo
-        $logoAreaW = $W - 2 * $marginLR; // 1440px de ancho para la fila de logos
-        $logoSpacing = 40; // Espacio entre logos
+        $logoMaxH = intval($logosAreaH * 0.80); 
+        $logoAreaW = $W - 2 * $marginLR; 
+        $logoSpacing = 40; 
         
-        $currentX = $marginLR; 
-        
+        $logosToCompose = [];
+        $currentXWidth = 0; 
+
+        // 1. Pre-cargar y dimensionar logos para calcular ancho total
         foreach ($sponsorLogos as $logoData) {
             $logoUrl = $logoData['photo'] ?? null;
             if (!$logoUrl) continue;
@@ -495,52 +486,47 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $logoBase = gi_safe_contain_logo($logoBase, $logoAreaW, $logoMaxH, $logoUrl, 'sponsor_logo');
                 if ($logoBase) {
                     $logoW = $logoBase->getImageWidth();
-                    $logoH = $logoBase->getImageHeight();
-                    
-                    // Verificar si el logo cabe en el espacio restante de la fila
-                    if ($currentX + $logoW + $logoSpacing > $W - $marginLR) {
-                        error_log("⚠️ Logo ignorado por falta de espacio en la barra de sponsors.");
-                        $logoBase->destroy();
-                        continue;
+                    // Limitar a los logos que quepan en una fila
+                    if ($currentXWidth + $logoW + ($currentXWidth > 0 ? $logoSpacing : 0) <= $logoAreaW) {
+                         $logosToCompose[] = $logoBase;
+                         $currentXWidth += $logoW + $logoSpacing;
+                    } else {
+                         $logoBase->destroy();
                     }
-                    
-                    // Centrar verticalmente en la zona de logos
-                    $logoY = $logosYStart + ($logosAreaH - $logoH) / 2;
-                    
-                    $patrocinadoresCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
-                    $logoBase->destroy();
-                    
-                    $currentX += $logoW + $logoSpacing;
                 }
             }
         }
         
-        // Si hay espacio restante, centrar la fila de logos
-        $finalLogoW = $currentX - $marginLR - $logoSpacing; // Ancho total ocupado por logos
-        $spaceToShift = ($W - 2 * $marginLR - $finalLogoW) / 2;
-        
-        // Crear un canvas para mover los logos
-        $finalLogosCanvas = new Imagick();
-        $finalLogosCanvas->newImage($W, $sectionPatrocinadoresH, new ImagickPixel('transparent'));
-        $finalLogosCanvas->setImageFormat('png');
-        
-        $finalLogosCanvas->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, intval($spaceToShift), 0);
-        $patrocinadoresCanvas->destroy();
-        $patrocinadoresCanvas = $finalLogosCanvas;
-        
-        error_log("⭐ Sección de patrocinadores generada con logos centrados.");
+        // 2. Componer logos centrados
+        if (!empty($logosToCompose)) {
+            $currentXWidth -= $logoSpacing; // Eliminar el último espaciado sobrante
+            $startX = $marginLR + ($logoAreaW - $currentXWidth) / 2; // Posición de inicio centrada
 
-    } else {
-        error_log("⚠️ No hay logos o sponsors para generar la barra.");
+            $currentX = $startX;
+
+            foreach ($logosToCompose as $logoBase) {
+                $logoW = $logoBase->getImageWidth();
+                $logoH = $logoBase->getImageHeight();
+                
+                $logoY = $logosYStart + ($logosAreaH - $logoH) / 2;
+                
+                $patrocinadoresCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
+                $logoBase->destroy();
+                
+                $currentX += $logoW + $logoSpacing;
+            }
+            error_log("⭐ Sección de patrocinadores generada con logos centrados.");
+        } else {
+            error_log("⚠️ No hay logos válidos para generar la barra.");
+        }
     }
     
-    // Componer la barra de sponsors en el lienzo principal
     $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, 0, $sectionPatrocinadoresY);
     $patrocinadoresCanvas->destroy();
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v2.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v3.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
