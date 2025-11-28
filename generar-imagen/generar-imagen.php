@@ -1,14 +1,14 @@
 <?php
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
- * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño moderno
- * Version: 2.1.0
+ * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño moderno y Grid 2x3
+ * Version: 2.2.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento');
+error_log('🚀 Iniciando plugin Caratula evento - Nuevo Diseño 2x3');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -20,7 +20,6 @@ add_action('rest_api_init', function () {
 
 /**
  * Función de redimensionado seguro (Cover logic) - Asegura que la imagen CUBRA la dimensión objetivo (puede cortar los bordes).
- * MODIFICADO: Prioriza el recorte vertical desde la parte superior (y_offset ajustado).
  */
 function safe_thumbnail($imagick, $w, $h, $url, $context) {
     if (!$imagick) return null;
@@ -36,12 +35,10 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
 
                 $x_offset = (int)(($newW - $w) / 2);
                 
-                // Si la imagen es para un 'speaker', intentamos recortar desde la parte superior (cabeza).
-                if ($context === 'speaker') {
-                    // Mantenemos el recorte cerca de la parte superior (0-20% de desplazamiento)
+                // Mantenemos el recorte cerca de la parte superior para fotos de personas
+                if ($context === 'speaker' || $context === 'speaker_circular') {
                     $y_offset = (int)(($newH - $h) * 0.20); 
                 } else {
-                    // Para otros usos (ej. banner), centramos.
                     $y_offset = (int)(($newH - $h) / 2); 
                 }
                 
@@ -64,8 +61,7 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
 }
 
 /**
- * Nueva función de redimensionado para LOGOS (Contain/Ajustar) - Mantiene 16:9 y no CORTA.
- * La imagen se ajusta para que quepa completamente dentro de las dimensiones.
+ * Función de redimensionado para LOGOS (Contain/Ajustar) - Mantiene el ratio y no CORTA.
  */
 function gi_safe_contain_logo($imagick, $targetW, $targetH, $url, $context) {
     if (!$imagick) return null;
@@ -73,14 +69,11 @@ function gi_safe_contain_logo($imagick, $targetW, $targetH, $url, $context) {
     try {
         if ($imagick->getImageWidth() > 0 && $imagick->getImageHeight() > 0) {
             if ($targetW > 0 && $targetH > 0) {
-                // Usar scaleImage con el factor de escala MIN para asegurar que quepa (contain)
                 $scaleRatio = min($targetW / $imagick->getImageWidth(), $targetH / $imagick->getImageHeight());
                 $newW = (int)($imagick->getImageWidth() * $scaleRatio);
                 $newH = (int)($imagick->getImageHeight() * $scaleRatio);
 
                 $imagick->scaleImage($newW, $newH);
-
-                // La imagen redimensionada ahora se ajusta a las dimensiones $newW x $newH
                 return $imagick;
             }
             return $imagick;
@@ -126,6 +119,7 @@ function gi_round_corners($imagick, $radius) {
 
 /**
  * Aplica una máscara circular a una imagen.
+ * Esta función es CRÍTICA para el nuevo diseño.
  */
 function gi_circular_mask($imagick) {
     if (!$imagick) return $imagick;
@@ -158,12 +152,7 @@ function gi_circular_mask($imagick) {
 
 
 /**
- * Envuelve el texto a una anchura máxima utilizando las métricas de Imagick para evitar el recorte.
- * @param ImagickDraw $draw Objeto ImagickDraw con la fuente y el tamaño establecidos.
- * @param Imagick $imagick Objeto Imagick para obtener métricas.
- * @param string $text Texto a envolver.
- * @param int $maxWidth Ancho máximo permitido en píxeles.
- * @return array Líneas de texto envueltas.
+ * Envuelve el texto a una anchura máxima.
  */
 function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
     $words = explode(' ', $text);
@@ -171,24 +160,18 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
     $currentLine = '';
 
     foreach ($words as $word) {
-        // Intentar agregar la palabra a la línea actual
         $testLine = $currentLine . ($currentLine ? ' ' : '') . $word;
-        
-        // Obtener las métricas para verificar el ancho
         $metrics = $imagick->queryFontMetrics($draw, $testLine);
 
         if ($metrics['textWidth'] <= $maxWidth) {
             $currentLine = $testLine;
         } else {
-            // La nueva palabra no cabe, guardar la línea actual y empezar una nueva
             if ($currentLine) {
                 $lines[] = $currentLine;
             }
-            // Si la palabra sola ya excede el ancho, la mantenemos como línea única para evitar un bucle infinito
             $currentLine = $word;
         }
     }
-    // Añadir la última línea si existe
     if ($currentLine) {
         $lines[] = $currentLine;
     }
@@ -197,7 +180,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Iniciando plugin Evento Inmobiliario Pro - Nuevo Diseño');
+    error_log('🚀 Iniciando plugin Evento Inmobiliario Pro - Nuevo Diseño 2x3');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -216,17 +199,17 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // --- CONFIGURACIÓN DE LIENZO Y FUENTE ---
     $W = intval($payload['canvas']['width'] ?? 1600);
     $H = intval($payload['canvas']['height'] ?? 2400);
-    $bg = $payload['canvas']['background'] ?? '#f0f0f0'; // Fondo por defecto más claro para el nuevo diseño
+    // Usamos blanco (#f0f0f0) como fondo predeterminado si no se especifica.
+    $bg = $payload['canvas']['background'] ?? '#f0f0f0'; 
 
     $upload_dir = wp_upload_dir();
     $base_dir = $upload_dir['basedir'];
     $montserratBlackPath = $base_dir . '/fonts/Montserrat-Black.ttf';
     $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
-
-    // 🖼️ Crear lienzo base con fondo que COBRE TODO
+    // 🖼️ Crear lienzo base con fondo de color sólido (ignoramos la URL del canvas, ya que el nuevo diseño usa un fondo simple o la imagen de banner).
     $img = new Imagick();
-    $img->newImage($W, $H, new ImagickPixel($bg));
+    $img->newImage($W, $H, new ImagickPixel('#f0f0f0')); // Fondo blanco/gris claro
     $img->setImageFormat('png');
 
 
@@ -274,8 +257,8 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $bannerH = intval($H * 0.25);
     $bannerY = 0;
     
-    // 🖼️ Imagen de fondo del banner
     $bannerImageUrl = $payload['banner_image']['photo'] ?? null;
+    // Usamos el campo banner_title del payload
     $bannerTitle = $payload['banner_title'] ?? 'Evento Corporativo Inmobiliario'; 
 
     if ($bannerImageUrl) {
@@ -371,7 +354,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows);
         
         // Dimensiones internas de la tarjeta
-        $photoDiameter = intval($cardW * 0.40); // 40% del ancho de la tarjeta
+        $photoDiameter = intval($cardW * 0.45); // 45% del ancho de la tarjeta
         $logoH = 40; // Altura fija para el logo
         $logoW = intval($cardW * 0.70); // Ancho máximo para el logo
         
@@ -394,11 +377,29 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 // 🖌️ Redondear esquinas y aplicar sombra
                 $cornerRadius = 20; 
                 $cardCanvas = gi_round_corners($cardCanvas, $cornerRadius);
+                // Es necesario componer la tarjeta en un canvas transparente para la sombra.
+                $cardWithShadow = new Imagick();
+                // 10px de margen para la sombra
+                $shadowMargin = 10; 
+                $cardWithShadow->newImage($cardW + $shadowMargin*2, $cardH + $shadowMargin*2, new ImagickPixel('transparent'));
+                $cardWithShadow->setImageFormat('png');
+
                 $cardCanvas->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)'));
                 $cardCanvas->shadowImage(80, 5, 0, 0); // Radio, sigma, x-offset, y-offset
 
-                $x = $gridX + $c * ($cardW + $gapX);
+                $cardWithShadow->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
+                $cardCanvas->destroy();
+                $cardCanvas = $cardWithShadow; // Ahora cardCanvas es la imagen con sombra y fondo transparente.
                 
+                // AJUSTE DE POSICIÓN
+                $x = $gridX + $c * ($cardW + $gapX) - $shadowMargin; // Compensar por el margen de la sombra
+                $y -= $shadowMargin; // Compensar por el margen de la sombra
+                
+                // --- CONTENIDO INTERNO DE LA TARJETA ---
+                $internalCanvas = new Imagick();
+                $internalCanvas->newImage($cardW, $cardH, new ImagickPixel('transparent'));
+                $internalCanvas->setImageFormat('png');
+
                 $currentY = 30; // Margen superior interno
                 
                 // 📷 Foto Circular
@@ -410,7 +411,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                     if ($photoBase) {
                         $photoBase = gi_circular_mask($photoBase);
                         $photoX = ($cardW - $photoDiameter) / 2;
-                        $cardCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), $currentY);
+                        $internalCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), $currentY);
                         $photoBase->destroy();
                         $currentY += $photoDiameter + 20; 
                     }
@@ -425,9 +426,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $drawName->setTextAlignment(Imagick::ALIGN_CENTER);
                 $name = trim($sp['name'] ?? 'Nombre Apellido');
                 
-                $metricsName = $cardCanvas->queryFontMetrics($drawName, $name);
+                $metricsName = $internalCanvas->queryFontMetrics($drawName, $name);
                 $nameY = $currentY + $metricsName['textHeight'] / 2;
-                $cardCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
+                $internalCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
                 $currentY += $metricsName['textHeight'] + 10; 
                 
                 // ✍️ Rol (Ocupación)
@@ -439,11 +440,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
                 $role = trim($sp['role'] ?? 'Cargo en la Empresa');
                 
-                $roleLines = gi_word_wrap_text($drawRole, $cardCanvas, $role, $cardW - 40);
+                $roleLines = gi_word_wrap_text($drawRole, $internalCanvas, $role, $cardW - 40);
                 $lineHeight = 25; 
                 
                 foreach ($roleLines as $i => $line) {
-                    $cardCanvas->annotateImage($drawRole, $cardW / 2, $currentY + ($i * $lineHeight), 0, $line);
+                    $internalCanvas->annotateImage($drawRole, $cardW / 2, $currentY + ($i * $lineHeight), 0, $line);
                 }
                 $currentY += count($roleLines) * $lineHeight + 15; 
                 
@@ -460,12 +461,17 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                         $remainingSpace = $cardH - $currentY - 20; 
                         $logoY = $currentY + ($remainingSpace - $logoBase->getImageHeight()) / 2;
                         
-                        $cardCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
+                        $internalCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
                         $logoBase->destroy();
                     }
                 }
 
-                // 🖼️ Componer la tarjeta en el lienzo principal
+                // 🖼️ Componer el contenido en el canvas con sombra
+                $cardCanvas->compositeImage($internalCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
+                $internalCanvas->destroy();
+
+
+                // 🖼️ Componer la tarjeta con sombra en el lienzo principal
                 $img->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
                 $cardCanvas->destroy();
             }
@@ -475,10 +481,9 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         error_log("⚠️ No hay datos de 'speakers' para generar el grid.");
     }
 
-
     // 📤 Exportar
-    // (Lógica de exportación sin cambios)
     $format = strtolower($payload['output']['format'] ?? 'jpg');
+    // Se corrige el nombre de archivo para evitar errores si no se usa `filename`
     $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_inmobiliario').'_new_design.'.$format);
 
     if ($format === 'jpg') {
