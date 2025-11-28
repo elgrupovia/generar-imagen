@@ -1,14 +1,14 @@
 <?php
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
- * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 65% Grid 2x3).
- * Version: 2.3.0
+ * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
+ * Version: 2.4.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional');
+error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional con Sponsors Bar');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -35,7 +35,7 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
 
                 $x_offset = (int)(($newW - $w) / 2);
                 
-                // Mantenemos el recorte cerca de la parte superior para fotos de personas
+                // Recorte optimizado para fotos de personas
                 if ($context === 'speaker' || $context === 'speaker_circular') {
                     $y_offset = (int)(($newH - $h) * 0.20); 
                 } else {
@@ -179,7 +179,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Iniciando plugin Evento Inmobiliario Pro - Nuevo Diseño A4');
+    error_log('🚀 Iniciando plugin Evento Inmobiliario Pro - Nuevo Diseño A4 con Sponsors Bar');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -204,7 +204,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $montserratBlackPath = $base_dir . '/fonts/Montserrat-Black.ttf';
     $fontPath = file_exists($montserratBlackPath) ? $montserratBlackPath : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
-    // 🖼️ Crear lienzo base con fondo gris claro para la sección de tarjetas
+    // 🖼️ Crear lienzo base con fondo gris claro
     $img = new Imagick();
     $img->newImage($W, $H, new ImagickPixel('#f0f0f0')); 
     $img->setImageFormat('png');
@@ -249,11 +249,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     };
 
     // --- 1. BANNER SUPERIOR (35% H) ---
-    $bannerH = intval($H * 0.35); // 35% de H
+    $bannerH = intval($H * 0.35); // 840px
     $bannerY = 0;
     
     $bannerImageUrl = $payload['banner_image']['photo'] ?? null;
-    
+    $bannerTitle = $payload['banner_title'] ?? 'Evento Corporativo Inmobiliario'; 
+    $eventDetails = $payload['event_details'] ?? '6 NOVIEMBRE 2026 | 9:00H | SILKEN PUERTA VALENCIA';
 
     if ($bannerImageUrl) {
         $bg_image = $download_image($bannerImageUrl);
@@ -268,17 +269,15 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             
             $img->compositeImage($bg_image, Imagick::COMPOSITE_OVER, 0, $bannerY);
             $bg_image->destroy();
-            error_log("🖼️ Banner de imagen de fondo aplicado (35% H, 40% Overlay).");
         } else {
              $solidBanner = new Imagick();
              $solidBanner->newImage($W, $bannerH, new ImagickPixel('#1a1a1a'));
              $img->compositeImage($solidBanner, Imagick::COMPOSITE_OVER, 0, $bannerY);
              $solidBanner->destroy();
-             error_log("⚠️ Fallback: Banner de color sólido aplicado.");
         }
     }
 
-    // ✍️ Texto del Banner (Título principal)
+    // ✍️ Texto del Banner (Título y Detalles)
     $drawTitle = new ImagickDraw();
     if (file_exists($fontPath)) $drawTitle->setFont($fontPath);
     $drawTitle->setFillColor('#FFFFFF');
@@ -288,7 +287,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     $metricsTitle = $img->queryFontMetrics($drawTitle, $bannerTitle);
     
-    // ✍️ Texto de Detalles (secundario)
     $drawDetails = new ImagickDraw();
     if (file_exists($fontPath)) $drawDetails->setFont($fontPath);
     $drawDetails->setFillColor('#CCCCCC');
@@ -298,184 +296,251 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     
     $metricsDetails = $img->queryFontMetrics($drawDetails, $eventDetails);
 
-    // Calcular la posición Y para centrar el bloque de texto (Título + Detalles)
     $totalTextHeight = $metricsTitle['textHeight'] + 20 + $metricsDetails['textHeight']; // 20px de espaciado
     $titleY = $bannerY + ($bannerH / 2) - ($totalTextHeight / 2) + $metricsTitle['textHeight'] - 10;
     
-    // Dibujar el título
     $img->annotateImage($drawTitle, $W / 2, $titleY, 0, $bannerTitle);
-    
-    // Dibujar los detalles
-    $detailsY = $titleY + 20 + 5; // 20px espacio, 5px ajuste visual
+    $detailsY = $titleY + 20 + 5; 
     $img->annotateImage($drawDetails, $W / 2, $detailsY, 0, $eventDetails);
+
+
+    // --- 2. SECCIÓN DE TARJETAS Y SPONSORS (65% H) ---
+    $cardsSectionH = $H - $bannerH; // 1560px
+    $cardsSectionY = $bannerH; // 840px
+
+    // --- 2a. GRID DE TARJETAS (Aprox. 80% de la sección 65%) ---
+    $gridAreaH = intval($cardsSectionH * 0.80); // 1248px
+    $gridYStart = $cardsSectionY; // Empieza justo debajo del banner
+
+    // 5% Margen exterior de la sección de tarjetas (izq/der)
+    $marginLR = intval($W * 0.05); // 80px
     
-    error_log("✍️ Título y detalles superpuestos centrados en el banner.");
-
-
-    // --- 2. GRID DE TARJETAS (65% H) ---
-
-    $speakers = $payload['speakers'] ?? [];
-    $totalSpeakers = count($speakers);
+    // 3% Margen superior/inferior para el grid (del área del grid)
+    $gridMarginTB = intval($gridAreaH * 0.03); // 37px
     
-    if ($totalSpeakers > 0) {
-        $cols = 3;
-        $rows = 2; // Fijo 2 filas
-        $maxSpeakers = $cols * $rows; 
-        
-        $cardsSectionY = $bannerH;
-        $cardsSectionH = $H - $bannerH; // 65% de H (1560px)
+    $gridW = $W - 2 * $marginLR; // 1440px
+    $gridH = $gridAreaH - 2 * $gridMarginTB; // 1174px
 
-        // 5% Margen exterior de la sección de tarjetas
-        $marginLR = intval($W * 0.05); // 80px
-        $marginTB = intval($cardsSectionH * 0.05); // 78px
-        
-        $gridW = $W - 2 * $marginLR; // 1440px
-        $gridH = $cardsSectionH - 2 * $marginTB; // 1404px
+    $gridXStart = $marginLR; // 80px
+    $gridYStart = $cardsSectionY + $gridMarginTB; // 840 + 37 = 877px
 
-        $gridXStart = $marginLR; // 80px
-        $gridYStart = $cardsSectionY + $marginTB; // 840 + 78 = 918px
+    // Espaciado entre tarjetas (3% H, 4% V del grid)
+    $gapX = intval($W * 0.03); // 48px
+    $gapY = intval($gridH * 0.04); // 47px
 
-        // Espaciado entre tarjetas (3% H, 4% V)
-        $gapX = intval($W * 0.03); // 48px
-        $gapY = intval($cardsSectionH * 0.04); // 62px
+    // Dimensiones de la tarjeta (Más pequeñas/cercanas a cuadrado)
+    $cardW = intval(($gridW - ($cols = 2) * $gapX) / 3); // 448px
+    $cardH = intval(($gridH - ($rows = 1) * $gapY) / 2); // 563px
+    
+    // Reajuste de variables (solo 2 filas x 3 columnas)
+    $cols = 3;
+    $rows = 2;
 
-        // Dimensiones de la tarjeta
-        $cardW = intval(($gridW - ($cols - 1) * $gapX) / $cols); // 448px
-        $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows); // 671px
-        
-        // --- Dimensiones Internas de la Tarjeta ---
-        $photoDiameter = intval($cardW * 0.40); // 40% del ancho de la tarjeta (179px)
-        $photoMarginTop = intval($cardH * 0.15); // 15% de la altura (101px)
-        $logoMaxH = intval($cardH * 0.25); // 25% de la altura (168px)
-        
-        $nameFontSize = 50; 
-        $roleFontSize = 30; 
-        $internalPadding = 30;
-        $shadowMargin = 20;
+    $cardW = intval(($gridW - ($cols - 1) * $gapX) / $cols); // 448px
+    $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows); // 563px
 
-        $index = 0;
-        for ($r = 0; $r < $rows; $r++) {
-            $baseY = $gridYStart + $r * ($cardH + $gapY);
-            for ($c = 0; $c < $cols; $c++) {
-                if ($index >= $totalSpeakers || $index >= $maxSpeakers) break 2;
-                
-                $sp = $speakers[$index++] ?? null;
-                if (!$sp) continue;
+    
+    // --- Dimensiones Internas de la Tarjeta ---
+    $photoDiameter = intval($cardW * 0.45); // 45% del ancho de la tarjeta (201px)
+    $photoMarginTop = intval($cardH * 0.10); // 10% de la altura (56px)
+    
+    $nameFontSize = 40; 
+    $roleFontSize = 25; 
+    $internalPadding = 30;
+    $shadowMargin = 15;
 
-                $cardCanvas = new Imagick();
-                $cardCanvas->newImage($cardW, $cardH, new ImagickPixel('#FFFFFF'));
-                $cardCanvas->setImageFormat('png');
-                
-                // 🖌️ Redondear esquinas y aplicar sombra
-                $cornerRadius = 20; 
-                $cardCanvas = gi_round_corners($cardCanvas, $cornerRadius);
+    $index = 0;
+    for ($r = 0; $r < $rows; $r++) {
+        $baseY = $gridYStart + $r * ($cardH + $gapY);
+        for ($c = 0; $c < $cols; $c++) {
+            if ($index >= $totalSpeakers || $index >= $maxSpeakers) break 2;
+            
+            $sp = $speakers[$index++] ?? null;
+            if (!$sp) continue;
 
-                // Crear un canvas más grande para contener la sombra
-                $cardWithShadow = new Imagick();
-                $cardWithShadow->newImage($cardW + $shadowMargin*2, $cardH + $shadowMargin*2, new ImagickPixel('transparent'));
-                $cardWithShadow->setImageFormat('png');
+            $cardCanvas = new Imagick();
+            $cardCanvas->newImage($cardW, $cardH, new ImagickPixel('#FFFFFF'));
+            $cardCanvas->setImageFormat('png');
+            
+            // 🖌️ Redondear esquinas y aplicar sombra
+            $cornerRadius = 20; 
+            $cardCanvas = gi_round_corners($cardCanvas, $cornerRadius);
 
-                $cardCanvas->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)'));
-                $cardCanvas->shadowImage(80, 5, 0, 0); 
+            $cardWithShadow = new Imagick();
+            $cardWithShadow->newImage($cardW + $shadowMargin*2, $cardH + $shadowMargin*2, new ImagickPixel('transparent'));
+            $cardWithShadow->setImageFormat('png');
 
-                $cardWithShadow->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
-                $cardCanvas->destroy();
-                $cardCanvas = $cardWithShadow; 
-                
-                // Posición de la tarjeta con compensación por la sombra
-                $x = $gridXStart + $c * ($cardW + $gapX) - $shadowMargin; 
-                $y = $baseY - $shadowMargin;
-                
-                // --- CONTENIDO INTERNO DE LA TARJETA ---
-                $internalCanvas = new Imagick();
-                $internalCanvas->newImage($cardW, $cardH, new ImagickPixel('transparent'));
-                $internalCanvas->setImageFormat('png');
+            $cardCanvas->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)'));
+            $cardCanvas->shadowImage(80, 5, 0, 0); 
 
-                $currentY = $photoMarginTop; // Margen superior basado en 15% H
-                
-                // 📷 Foto Circular
-                $photoUrl = $sp['photo'] ?? null;
-                $photoBase = $download_image($photoUrl);
+            $cardWithShadow->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
+            $cardCanvas->destroy();
+            $cardCanvas = $cardWithShadow; 
+            
+            // Posición de la tarjeta con compensación por la sombra
+            $x = $gridXStart + $c * ($cardW + $gapX) - $shadowMargin; 
+            $y = $baseY - $shadowMargin;
+            
+            // --- CONTENIDO INTERNO DE LA TARJETA ---
+            $internalCanvas = new Imagick();
+            $internalCanvas->newImage($cardW, $cardH, new ImagickPixel('transparent'));
+            $internalCanvas->setImageFormat('png');
 
+            $currentY = $photoMarginTop; 
+            
+            // 📷 Foto Circular
+            $photoUrl = $sp['photo'] ?? null;
+            $photoBase = $download_image($photoUrl);
+
+            if ($photoBase) {
+                $photoBase = safe_thumbnail($photoBase, $photoDiameter, $photoDiameter, $photoUrl, 'speaker_circular');
                 if ($photoBase) {
-                    $photoBase = safe_thumbnail($photoBase, $photoDiameter, $photoDiameter, $photoUrl, 'speaker_circular');
-                    if ($photoBase) {
-                        $photoBase = gi_circular_mask($photoBase);
-                        $photoX = ($cardW - $photoDiameter) / 2;
-                        $internalCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), intval($currentY));
-                        $photoBase->destroy();
-                        $currentY += $photoDiameter + 20; // Espacio después de la foto
-                    }
+                    $photoBase = gi_circular_mask($photoBase);
+                    $photoX = ($cardW - $photoDiameter) / 2;
+                    $internalCanvas->compositeImage($photoBase, Imagick::COMPOSITE_OVER, intval($photoX), intval($currentY));
+                    $photoBase->destroy();
+                    $currentY += $photoDiameter + 20; // Espacio después de la foto
                 }
-                
-                // ✍️ Nombre
-                $drawName = new ImagickDraw();
-                if (file_exists($fontPath)) $drawName->setFont($fontPath);
-                $drawName->setFillColor('#000000'); 
-                $drawName->setFontSize($nameFontSize); // ~15pt escalado
-                $drawName->setFontWeight(900);
-                $drawName->setTextAlignment(Imagick::ALIGN_CENTER);
-                $name = trim($sp['name'] ?? 'Nombre Apellido');
-                
-                $metricsName = $internalCanvas->queryFontMetrics($drawName, $name);
-                $nameY = $currentY + $metricsName['textHeight'] / 2;
-                $internalCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
-                $currentY += $metricsName['textHeight'] + 5; 
-                
-                // ✍️ Rol (Ocupación)
-                $drawRole = new ImagickDraw();
-                if (file_exists($fontPath)) $drawRole->setFont($fontPath);
-                $drawRole->setFillColor('#555555'); 
-                $drawRole->setFontSize($roleFontSize); // ~10pt escalado
-                $drawRole->setFontWeight(600);
-                $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
-                $role = trim($sp['role'] ?? 'Cargo en la Empresa');
-                
-                $roleLines = gi_word_wrap_text($drawRole, $internalCanvas, $role, $cardW - $internalPadding * 2);
-                $lineHeight = $roleFontSize + 5; 
-                
-                foreach ($roleLines as $i => $line) {
-                    $internalCanvas->annotateImage($drawRole, $cardW / 2, $currentY + ($i * $lineHeight), 0, $line);
-                }
-                $currentY += count($roleLines) * $lineHeight + 15; 
-                
-                
-                // 🏢 Logo de Empresa (25% H)
-                $logoUrl = $sp['logo'] ?? null;
-                $logoBase = $download_image($logoUrl);
-                
+            }
+            
+            // ✍️ Nombre
+            $drawName = new ImagickDraw();
+            if (file_exists($fontPath)) $drawName->setFont($fontPath);
+            $drawName->setFillColor('#000000'); 
+            $drawName->setFontSize($nameFontSize); 
+            $drawName->setFontWeight(900);
+            $drawName->setTextAlignment(Imagick::ALIGN_CENTER);
+            $name = trim($sp['name'] ?? 'Nombre Apellido');
+            
+            $metricsName = $internalCanvas->queryFontMetrics($drawName, $name);
+            $nameY = $currentY + $metricsName['textHeight'] / 2;
+            $internalCanvas->annotateImage($drawName, $cardW / 2, $nameY, 0, $name);
+            $currentY += $metricsName['textHeight'] + 5; 
+            
+            // ✍️ Rol (Ocupación)
+            $drawRole = new ImagickDraw();
+            if (file_exists($fontPath)) $drawRole->setFont($fontPath);
+            $drawRole->setFillColor('#555555'); 
+            $drawRole->setFontSize($roleFontSize); 
+            $drawRole->setFontWeight(600);
+            $drawRole->setTextAlignment(Imagick::ALIGN_CENTER);
+            $role = trim($sp['role'] ?? 'Cargo en la Empresa');
+            
+            $roleLines = gi_word_wrap_text($drawRole, $internalCanvas, $role, $cardW - $internalPadding * 2);
+            $lineHeight = $roleFontSize + 5; 
+            
+            // Centrar el texto en el espacio restante de la tarjeta
+            $textBlockHeight = count($roleLines) * $lineHeight;
+            $remainingSpace = $cardH - $currentY - $internalPadding;
+            $roleYStart = $currentY + ($remainingSpace - $textBlockHeight) / 2;
+
+            foreach ($roleLines as $i => $line) {
+                $internalCanvas->annotateImage($drawRole, $cardW / 2, $roleYStart + ($i * $lineHeight), 0, $line);
+            }
+
+            // 🖼️ Componer el contenido en el canvas con sombra
+            $cardCanvas->compositeImage($internalCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
+            $internalCanvas->destroy();
+
+            // 🖼️ Componer la tarjeta con sombra en el lienzo principal
+            $img->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
+            $cardCanvas->destroy();
+        }
+    }
+    error_log("🎤 Grid de tarjetas 2x3 generado con éxito.");
+
+    // --- 2b. BARRA DE SPONSORS (Aprox. 20% de la sección 65%) ---
+    $sectionPatrocinadoresH = $cardsSectionH - $gridAreaH; // 1560 - 1248 = 312px
+    $sectionPatrocinadoresY = $cardsSectionY + $gridAreaH; // 840 + 1248 = 2088px
+
+    $patrocinadoresCanvas = new Imagick();
+    $patrocinadoresCanvas->newImage($W, $sectionPatrocinadoresH, new ImagickPixel('#FFFFFF')); // Fondo blanco
+    $patrocinadoresCanvas->setImageFormat('png');
+    
+    // Recopilar todos los logos
+    $sponsorLogos = array_merge($payload['logos'] ?? [], $payload['sponsors'] ?? []);
+    
+    if (!empty($sponsorLogos)) {
+        
+        // ✍️ Título "Sponsors:"
+        $drawSponsorTitle = new ImagickDraw();
+        if (file_exists($fontPath)) $drawSponsorTitle->setFont($fontPath);
+        $drawSponsorTitle->setFillColor('#333333'); 
+        $drawSponsorTitle->setFontSize(30); 
+        $drawSponsorTitle->setFontWeight(700);
+        $drawSponsorTitle->setTextAlignment(Imagick::ALIGN_CENTER);
+        
+        $sponsorTitleText = 'Sponsors:';
+        $metricsST = $patrocinadoresCanvas->queryFontMetrics($drawSponsorTitle, $sponsorTitleText);
+        
+        // Posicionar el título cerca del top (ej. 30px abajo)
+        $titleY = 30 + $metricsST['textHeight'];
+        $patrocinadoresCanvas->annotateImage($drawSponsorTitle, $W / 2, $titleY, 0, $sponsorTitleText);
+
+        $logosYStart = $titleY + 10; // Espacio debajo del título
+        $logosAreaH = $sectionPatrocinadoresH - $logosYStart - 10; // Altura restante - margen inferior
+        
+        $logoMaxH = intval($logosAreaH * 0.80); // Altura máxima para un logo
+        $logoAreaW = $W - 2 * $marginLR; // 1440px de ancho para la fila de logos
+        $logoSpacing = 40; // Espacio entre logos
+        
+        $currentX = $marginLR; 
+        
+        foreach ($sponsorLogos as $logoData) {
+            $logoUrl = $logoData['photo'] ?? null;
+            if (!$logoUrl) continue;
+
+            $logoBase = $download_image($logoUrl);
+            if ($logoBase) {
+                $logoBase = gi_safe_contain_logo($logoBase, $logoAreaW, $logoMaxH, $logoUrl, 'sponsor_logo');
                 if ($logoBase) {
-                    // El logo debe caber dentro del espacio de 25%H (168px) y ser proporcional al ancho de la tarjeta.
-                    $logoBase = gi_safe_contain_logo($logoBase, $cardW - $internalPadding * 2, $logoMaxH, $logoUrl, 'logo_speaker');
-                    if ($logoBase) {
-                        $logoX = ($cardW - $logoBase->getImageWidth()) / 2;
-                        
-                        // Posicionar en la parte inferior de la tarjeta
-                        $logoY = $cardH - $logoBase->getImageHeight() - 20; // 20px de margen inferior
-                        
-                        $internalCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
+                    $logoW = $logoBase->getImageWidth();
+                    $logoH = $logoBase->getImageHeight();
+                    
+                    // Verificar si el logo cabe en el espacio restante de la fila
+                    if ($currentX + $logoW + $logoSpacing > $W - $marginLR) {
+                        error_log("⚠️ Logo ignorado por falta de espacio en la barra de sponsors.");
                         $logoBase->destroy();
+                        continue;
                     }
+                    
+                    // Centrar verticalmente en la zona de logos
+                    $logoY = $logosYStart + ($logosAreaH - $logoH) / 2;
+                    
+                    $patrocinadoresCanvas->compositeImage($logoBase, Imagick::COMPOSITE_OVER, intval($currentX), intval($logoY));
+                    $logoBase->destroy();
+                    
+                    $currentX += $logoW + $logoSpacing;
                 }
-
-                // 🖼️ Componer el contenido en el canvas con sombra
-                $cardCanvas->compositeImage($internalCanvas, Imagick::COMPOSITE_OVER, $shadowMargin, $shadowMargin);
-                $internalCanvas->destroy();
-
-
-                // 🖼️ Componer la tarjeta con sombra en el lienzo principal
-                $img->compositeImage($cardCanvas, Imagick::COMPOSITE_OVER, intval($x), intval($y));
-                $cardCanvas->destroy();
             }
         }
-        error_log("🎤 Grid de tarjetas 2x3 generado con éxito con proporciones A4.");
+        
+        // Si hay espacio restante, centrar la fila de logos
+        $finalLogoW = $currentX - $marginLR - $logoSpacing; // Ancho total ocupado por logos
+        $spaceToShift = ($W - $2 * $marginLR - $finalLogoW) / 2;
+        
+        // Crear un canvas para mover los logos
+        $finalLogosCanvas = new Imagick();
+        $finalLogosCanvas->newImage($W, $sectionPatrocinadoresH, new ImagickPixel('transparent'));
+        $finalLogosCanvas->setImageFormat('png');
+        
+        $finalLogosCanvas->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, intval($spaceToShift), 0);
+        $patrocinadoresCanvas->destroy();
+        $patrocinadoresCanvas = $finalLogosCanvas;
+        
+        error_log("⭐ Sección de patrocinadores generada con logos centrados.");
+
     } else {
-        error_log("⚠️ No hay datos de 'speakers' para generar el grid.");
+        error_log("⚠️ No hay logos o sponsors para generar la barra.");
     }
+    
+    // Componer la barra de sponsors en el lienzo principal
+    $img->compositeImage($patrocinadoresCanvas, Imagick::COMPOSITE_OVER, 0, $sectionPatrocinadoresY);
+    $patrocinadoresCanvas->destroy();
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v2.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -504,7 +569,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Nuevo Diseño A4): $url");
+    error_log("✅ Imagen generada (Diseño A4 Final): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
