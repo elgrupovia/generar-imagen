@@ -1,14 +1,14 @@
 <?php
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
- * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional. Lógica de grid optimizada y banner reducido.
- * Version: 2.26.0
+ * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional. FIX: Grid 2-3-2-3 forzado para 10 Speakers y ajuste de altura de tarjetas.
+ * Version: 2.27.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - FIX: Banner Reducido, Grid Simple (Max 3 cols, Centrado).');
+error_log('🚀 Iniciando plugin Caratula evento - FIX: Banner Reducido, Grid 2-3-2-3 forzado para 10 Speakers.');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -18,8 +18,8 @@ add_action('rest_api_init', function () {
     ]);
 });
 
-// --- FUNCIONES AUXILIARES (SAFE_THUMBNAIL, GI_SAFE_CONTAIN_LOGO, GI_ROUND_CORNER, GI_WORD_WRAP_TEXT) ---
-// *Se asume que estas funciones son válidas y se mantienen intactas del código original.*
+// --- FUNCIONES AUXILIARES (safe_thumbnail, gi_safe_contain_logo, gi_round_corners, gi_word_wrap_text) ---
+// *Mantener el código de las funciones auxiliares aquí, ya que no cambian.*
 
 /**
  * Función de redimensionado seguro (Cover logic) - Asegura que la imagen CUBRA la dimensión objetivo (puede cortar los bordes).
@@ -153,7 +153,7 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
 
 // --- FUNCIÓN PRINCIPAL DE GENERACIÓN ---
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con FIX: Banner Reducido, Grid Simple (Max 3 cols, Centrado).');
+    error_log('🚀 Ejecutando con FIX: Banner Reducido, Grid 2-3-2-3 forzado para 10 Speakers.');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
@@ -184,7 +184,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $img->setImageFormat('png');
 
 
-    // 🔽 Función de descarga (Mantener la función anónima `download_image` aquí)
+    // 🔽 Función de descarga
     $download_image = function(string $url) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -233,9 +233,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $internalPadding = 30; // 30px
     $shadowMargin = 15; // 15px
 
-    // --- 1. BANNER SUPERIOR (¡REDUCIDO a 25% H!) ---
-    // ANTES: 35%
-    // AHORA: 25%
+    // --- 1. BANNER SUPERIOR (REDUCIDO a 25% H) ---
     $bannerH = intval($H * 0.25); // 600px (en 2400px de altura total)
     $bannerY = 0;
     
@@ -246,14 +244,14 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $bg_image = safe_thumbnail($bg_image, $W, $bannerH, $bannerImageUrl, 'banner_top');
             $img->compositeImage($bg_image, Imagick::COMPOSITE_OVER, 0, $bannerY);
             $bg_image->destroy();
-            error_log("🖼️ Banner de imagen de fondo aplicado (Banner reducido a 25%).");
+            error_log("🖼️ Banner de imagen de fondo aplicado (Banner 25%).");
 
         } else {
              $solidBanner = new Imagick();
              $solidBanner->newImage($W, $bannerH, new ImagickPixel('#1a1a1a'));
              $img->compositeImage($solidBanner, Imagick::COMPOSITE_OVER, 0, $bannerY);
              $solidBanner->destroy();
-             error_log("⚠️ Fallback: Banner de color sólido aplicado (Banner reducido a 25%).");
+             error_log("⚠️ Fallback: Banner de color sólido aplicado (Banner 25%).");
         }
     }
     
@@ -266,7 +264,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         try {
             $logoCorp = new Imagick($logoCorpPath);
             $logoCorpMaxW = intval($W * 0.15); 
-            $logoCorpMaxH = intval($bannerH * 0.18); // Se incrementa la altura máxima para que quepa bien en el banner más corto
+            $logoCorpMaxH = intval($bannerH * 0.18); 
             $logoCorp = gi_safe_contain_logo($logoCorp, $logoCorpMaxW, $logoCorpMaxH, $logoCorpPath, 'corporate_logo');
             
             if ($logoCorp) {
@@ -277,7 +275,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 
                 $img->compositeImage($logoCorp, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
                 $logoCorp->destroy();
-                error_log("🏢 Logo corporativo compuesto en la esquina superior derecha.");
+                error_log("🏢 Logo corporativo compuesto.");
             }
         } catch (Exception $e) {
             error_log("❌ Error cargando/componiendo logo corporativo: " . $e->getMessage());
@@ -289,20 +287,27 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
 
     // --- 2. SECCIÓN DE TARJETAS Y SPONSORS (75% H) ---
-    $cardsSectionH = $H - $bannerH; // Ahora es 1800px (en 2400px total)
-    $cardsSectionY = $bannerH; // 600px
+    $cardsSectionH = $H - $bannerH; 
+    $cardsSectionY = $bannerH; 
 
-    // --- 2a. CÁLCULO DE DISTRIBUCIÓN DINÁMICA DE GRID (SIMPLIFICADA) ---
+    // --- 2a. CÁLCULO DE DISTRIBUCIÓN DINÁMICA DE GRID (FIX 10 SPEAKERS) ---
     $maxCols = 3;
     $gridConfig = [];
     $remainingSpeakers = $totalSpeakers;
     
-    // Intentar llenar filas de 3, la última fila contendrá 1, 2 o 3.
-    while ($remainingSpeakers > 0) {
-        $colsInRow = min($maxCols, $remainingSpeakers);
-        $gridConfig[] = $colsInRow;
-        $remainingSpeakers -= $colsInRow;
+    if ($totalSpeakers === 10) {
+        $gridConfig = [2, 3, 2, 3];
+        error_log("📐 Distribución FORZADA para 10 speakers: 2-3-2-3");
+    } else {
+        // Lógica simple (3, 3, 3, 1...) para el resto de casos
+        while ($remainingSpeakers > 0) {
+            $colsInRow = min($maxCols, $remainingSpeakers);
+            $gridConfig[] = $colsInRow;
+            $remainingSpeakers -= $colsInRow;
+        }
+        error_log("📐 Distribución SIMPLE: " . implode('-', array_filter($gridConfig)));
     }
+
 
     $gridRows = array_filter($gridConfig);
     $rows = count($gridRows);
@@ -320,20 +325,35 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         $gridXStart = $marginLR; 
         $gapY = intval($gridH * 0.04); 
 
-        // Altura de la tarjeta: Se divide el alto total por el número de filas
+        // Altura de la tarjeta: Se divide el alto total por el número de filas (Será más pequeña si hay 4 filas)
         $cardH = intval(($gridH - ($rows - 1) * $gapY) / $rows); 
         
+        // Ajustamos la altura si hay demasiadas filas para el espacio disponible (ej. si $cardH se vuelve negativo o muy pequeño)
+        if ($cardH < 250) { // Valor de seguridad para evitar tarjetas demasiado planas
+            $cardH = 250; 
+            // Recalcular gridH y gridAreaH para ajustar el espacio de sponsors si es necesario
+            $gridH = $rows * $cardH + ($rows - 1) * $gapY;
+            $gridAreaH = $gridH + 2 * $gridMarginTB;
+            error_log("⚠️ Altura de tarjeta ajustada a $cardH para evitar aplanamientos.");
+        }
+
+
         // << EFECTO DE ELEVACIÓN MÍNIMA (5%) >>
         $overlapPercentage = 0.05; 
         $overlapAmount = intval($cardH * $overlapPercentage); 
         $gridYStart = $bannerH - $overlapAmount; 
 
         
-        // --- Dimensiones Internas Comunes para Speakers ---
+        // --- Dimensiones Internas Comunes para Speakers (Se adaptarán a la nueva $cardH) ---
         $photoSizeMax = intval($gridW / 3 * 0.70); // Foto CUADRADA, basada en un ancho de 3 cols
         $photoMarginTop = intval($cardH * 0.05); 
+        
+        // Reducimos el tamaño de la foto si la nueva altura de tarjeta es muy baja
+        $photoMaxHForNewCard = $cardH - $photoMarginTop - 25 - 10 - 10 - 20 - 15 - 15; // Aprox. Altura disponible
+        $photoSize = min($photoSizeMax, intval($photoMaxHForNewCard * 0.50)); // Foto toma máx. 50% de la altura disponible
+        
         $nameFontSize = 40; 
-        $roleFontSize = 20; 
+        $roleFontSize = 20; // Se mantiene en 20px, como en el FIX anterior
         $speakerPhotoCornerRadius = 20; 
 
 
@@ -349,7 +369,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $cardW = intval(($gridW - ($cols - 1) * $gapX) / $cols); 
             
             // Recalcular elementos internos con el nuevo ancho de tarjeta (especialmente la foto)
-            $photoSize = min($photoSizeMax, intval($cardW * 0.70)); 
+            // Aquí usamos el $photoSize ya calculado y ajustado en función de la altura.
             $speakerLogoAreaW = $cardW - $internalPadding * 2; 
 
             // Se calcula el espacio total ocupado por las tarjetas y gaps en la fila
@@ -364,19 +384,18 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $sp = $speakers[$index++] ?? null;
                 if (!$sp) continue;
 
-                // 1. Crear el fondo BLANCO y redondear esquinas (TARJETA BLANCA LIMPIA)
+                // 1. Crear el fondo BLANCO y redondear esquinas
                 $cardCanvas = new Imagick();
                 $cardCanvas->newImage($cardW, $cardH, new ImagickPixel('#FFFFFF'));
                 $cardCanvas->setImageFormat('png');
                 $cornerRadius = 20; 
                 $cardCanvas = gi_round_corners($cardCanvas, $cornerRadius);
 
-                // 2. Crear la sombra
+                // 2. Crear la sombra y 3. Contenedor final
                 $shadowBase = clone $cardCanvas;
                 $shadowBase->setImageBackgroundColor(new ImagickPixel('rgba(0, 0, 0, 0)')); 
                 $shadowBase->shadowImage(80, 5, 0, 0); 
 
-                // 3. Crear el contenedor final (sombra + tarjeta blanca)
                 $cardContainer = new Imagick();
                 $cardContainer->newImage($cardW + $shadowMargin*2, $cardH + $shadowMargin*2, new ImagickPixel('transparent'));
                 $cardContainer->setImageFormat('png');
@@ -398,7 +417,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
                 $currentY = $photoMarginTop; 
                 
-                // 📷 Foto Cuadrada con Esquinas Redondeadas
+                // 📷 Foto Cuadrada con Esquinas Redondeadas (usando el $photoSize ajustado)
                 $photoUrl = $sp['photo'] ?? null;
                 $photoBase = $download_image($photoUrl);
 
@@ -483,20 +502,19 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $currentGridY = $baseY + $cardH + $gapY;
 
         }
-        error_log("🎤 Grid de tarjetas SIMPLIFICADO generado. Distribución: " . implode('-', $gridRows));
+        error_log("🎤 Grid de tarjetas generado. Distribución final: " . implode('-', $gridRows));
     }
     
     // --- 2b. BARRA DE SPONSORS ---
 
     // 1. Calcular posición Y: Justo después de la última fila de speakers + un gap
     if ($rows > 0) {
-        // La altura de la última fila es $cardH, el gap es $gapY.
         $lastRowYEnd = $gridYStart + ($rows - 1) * ($cardH + $gapY) + $cardH;
     } else {
-        $lastRowYEnd = $cardsSectionY + $internalPadding; // Si no hay speakers, lo ponemos al principio de la sección
+        $lastRowYEnd = $cardsSectionY + $internalPadding; 
     }
     
-    $gapBeforeSponsors = intval($W * 0.04); // 4% del ancho para un gap grande
+    $gapBeforeSponsors = intval($W * 0.04); 
     $sponsorCardYStart = $lastRowYEnd + $gapBeforeSponsors; 
 
     // 2. Dimensiones
@@ -599,7 +617,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v_dinamica_v2.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v_dinamica_v2-2-3-2-3.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -628,7 +646,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Dinámico V2): $url");
+    error_log("✅ Imagen generada (Diseño A4 Dinámico 2-3-2-3): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
