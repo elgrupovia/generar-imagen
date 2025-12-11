@@ -1,14 +1,14 @@
 <?php
 /**
  * Plugin Name: Generar Collage Evento Inmobiliario
- * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional (35% Banner / 55% Grid 2x3 / 10% Sponsors).
- * Version: 2.25.0
+ * Description: Plantilla profesional para eventos inmobiliarios corporativos con diseño A4 Proporcional. Lógica de grid optimizada y banner reducido.
+ * Version: 2.26.0
  * Author: GrupoVia
  */
 
 if (!defined('ABSPATH')) exit;
 
-error_log('🚀 Iniciando plugin Caratula evento - Diseño A4 Proporcional - FIX Definitivo Logos: Texto Rol reducido (20px) y Logos escalados a tamaño máximo disponible.');
+error_log('🚀 Iniciando plugin Caratula evento - FIX: Banner Reducido, Grid Simple (Max 3 cols, Centrado).');
 
 add_action('rest_api_init', function () {
     register_rest_route('imagen/v1', '/generar', [
@@ -18,10 +18,14 @@ add_action('rest_api_init', function () {
     ]);
 });
 
+// --- FUNCIONES AUXILIARES (SAFE_THUMBNAIL, GI_SAFE_CONTAIN_LOGO, GI_ROUND_CORNER, GI_WORD_WRAP_TEXT) ---
+// *Se asume que estas funciones son válidas y se mantienen intactas del código original.*
+
 /**
  * Función de redimensionado seguro (Cover logic) - Asegura que la imagen CUBRA la dimensión objetivo (puede cortar los bordes).
  */
 function safe_thumbnail($imagick, $w, $h, $url, $context) {
+    // ... Código original de safe_thumbnail
     if (!$imagick) return null;
 
     try {
@@ -64,6 +68,7 @@ function safe_thumbnail($imagick, $w, $h, $url, $context) {
  * Función de redimensionado para LOGOS (Contain/Ajustar) - Mantiene el ratio y no CORTA.
  */
 function gi_safe_contain_logo($imagick, $targetW, $targetH, $url, $context) {
+    // ... Código original de gi_safe_contain_logo
     if (!$imagick) return null;
 
     try {
@@ -88,11 +93,11 @@ function gi_safe_contain_logo($imagick, $targetW, $targetH, $url, $context) {
     }
 }
 
-
 /**
  * Aplica esquinas redondeadas a una imagen Imagick.
  */
 function gi_round_corners($imagick, $radius) {
+    // ... Código original de gi_round_corners
     if (!$imagick) return $imagick;
 
     try {
@@ -118,11 +123,11 @@ function gi_round_corners($imagick, $radius) {
     }
 }
 
-
 /**
  * Envuelve el texto a una anchura máxima.
  */
 function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
+    // ... Código original de gi_word_wrap_text
     $words = explode(' ', $text);
     $lines = [];
     $currentLine = '';
@@ -146,16 +151,15 @@ function gi_word_wrap_text($draw, $imagick, $text, $maxWidth) {
     return $lines;
 }
 
-
+// --- FUNCIÓN PRINCIPAL DE GENERACIÓN ---
 function gi_generate_collage_logs(WP_REST_Request $request) {
-    error_log('🚀 Ejecutando con Tarjetas de Speakers Mínimamente Flotantes y Tarjeta de Sponsors Horizontal (Diseño A4 Proporcional y Grid DINÁMICO).');
+    error_log('🚀 Ejecutando con FIX: Banner Reducido, Grid Simple (Max 3 cols, Centrado).');
 
     if (!class_exists('Imagick')) {
         return new WP_REST_Response(['error'=>'Imagick no disponible'], 500);
     }
 
     $token = $request->get_param('token');
-    // **Asegúrate de cambiar 'SECRETO' por tu token real**
     if ($token !== 'SECRETO') {
         return new WP_REST_Response(['error'=>'Unauthorized'], 401);
     }
@@ -229,29 +233,31 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $internalPadding = 30; // 30px
     $shadowMargin = 15; // 15px
 
-    // --- 1. BANNER SUPERIOR (35% H) ---
-    $bannerH = intval($H * 0.35); // 840px
+    // --- 1. BANNER SUPERIOR (¡REDUCIDO a 25% H!) ---
+    // ANTES: 35%
+    // AHORA: 25%
+    $bannerH = intval($H * 0.25); // 600px (en 2400px de altura total)
     $bannerY = 0;
     
-    // ... Lógica de composición del Banner (Omitida para brevedad, mantener su código)
+    // ... Lógica de composición del Banner
     if ($bannerImageUrl) {
         $bg_image = $download_image($bannerImageUrl);
         if ($bg_image) {
             $bg_image = safe_thumbnail($bg_image, $W, $bannerH, $bannerImageUrl, 'banner_top');
             $img->compositeImage($bg_image, Imagick::COMPOSITE_OVER, 0, $bannerY);
             $bg_image->destroy();
-            error_log("🖼️ Banner de imagen de fondo aplicado (sin texto superpuesto).");
+            error_log("🖼️ Banner de imagen de fondo aplicado (Banner reducido a 25%).");
 
         } else {
              $solidBanner = new Imagick();
              $solidBanner->newImage($W, $bannerH, new ImagickPixel('#1a1a1a'));
              $img->compositeImage($solidBanner, Imagick::COMPOSITE_OVER, 0, $bannerY);
              $solidBanner->destroy();
-             error_log("⚠️ Fallback: Banner de color sólido aplicado.");
+             error_log("⚠️ Fallback: Banner de color sólido aplicado (Banner reducido a 25%).");
         }
     }
     
-    // ... Lógica de composición del Logo Corporativo (Omitida para brevedad, mantener su código)
+    // ... Lógica de composición del Logo Corporativo
     $logoFileName = 'LOGO_GRUPO_VIA_CMYK_BLANCO.png';
     $logoCorpPath = dirname(__FILE__) . '/' . $logoFileName;
     $logoCorp = null;
@@ -260,7 +266,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
         try {
             $logoCorp = new Imagick($logoCorpPath);
             $logoCorpMaxW = intval($W * 0.15); 
-            $logoCorpMaxH = intval($bannerH * 0.12); 
+            $logoCorpMaxH = intval($bannerH * 0.18); // Se incrementa la altura máxima para que quepa bien en el banner más corto
             $logoCorp = gi_safe_contain_logo($logoCorp, $logoCorpMaxW, $logoCorpMaxH, $logoCorpPath, 'corporate_logo');
             
             if ($logoCorp) {
@@ -271,7 +277,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 
                 $img->compositeImage($logoCorp, Imagick::COMPOSITE_OVER, intval($logoX), intval($logoY));
                 $logoCorp->destroy();
-                error_log("🏢 Logo corporativo compuesto en la esquina superior derecha (más pequeño).");
+                error_log("🏢 Logo corporativo compuesto en la esquina superior derecha.");
             }
         } catch (Exception $e) {
             error_log("❌ Error cargando/componiendo logo corporativo: " . $e->getMessage());
@@ -282,114 +288,29 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     // --- FIN LOGO CORPORATIVO ---
 
 
-    // --- 2. SECCIÓN DE TARJETAS Y SPONSORS (65% H) ---
-    $cardsSectionH = $H - $bannerH; // 1560px
-    $cardsSectionY = $bannerH; // 840px
+    // --- 2. SECCIÓN DE TARJETAS Y SPONSORS (75% H) ---
+    $cardsSectionH = $H - $bannerH; // Ahora es 1800px (en 2400px total)
+    $cardsSectionY = $bannerH; // 600px
 
-    // --- 2a. CÁLCULO DE DISTRIBUCIÓN DINÁMICA DE GRID ---
-    $gridConfig = [];
+    // --- 2a. CÁLCULO DE DISTRIBUCIÓN DINÁMICA DE GRID (SIMPLIFICADA) ---
     $maxCols = 3;
-
-    if ($totalSpeakers > 0) {
-        $remainingSpeakers = $totalSpeakers;
-        
-        while ($remainingSpeakers > 0) {
-            $colsInRow = 0;
-            if ($remainingSpeakers >= $maxCols) {
-                $colsInRow = $maxCols;
-            } elseif ($remainingSpeakers === $maxCols - 1) { // Por ejemplo, 2, 5, 8, 11
-                 // Priorizar 3 si el siguiente grupo es 3, 2, 3, etc.
-                 if ($totalSpeakers - $remainingSpeakers === 0 || count($gridConfig) === 0) {
-                    $colsInRow = $maxCols;
-                 } else {
-                     $colsInRow = $maxCols - 1; // 2
-                 }
-            } elseif ($remainingSpeakers === $maxCols - 2) { // Por ejemplo, 1, 4, 7, 10
-                 $colsInRow = $maxCols - 1; // 2
-            } else {
-                $colsInRow = $remainingSpeakers;
-            }
-
-            if ($colsInRow > $remainingSpeakers) {
-                 $colsInRow = $remainingSpeakers;
-            }
-
-            $gridConfig[] = $colsInRow;
-            $remainingSpeakers -= $colsInRow;
-
-            // Lógica de ajuste para los casos específicos
-            if ($totalSpeakers === 7 && count($gridConfig) === 1) { // 7 speakers: 2-3-2
-                $gridConfig = [2]; 
-                $remainingSpeakers = 5;
-            } elseif ($totalSpeakers === 7 && count($gridConfig) === 2 && $gridConfig[0] === 2) {
-                 $gridConfig = [2, 3];
-                 $remainingSpeakers = 2;
-                 break;
-            } elseif ($totalSpeakers === 8 && count($gridConfig) === 1) { // 8 speakers: 3-2-3
-                $gridConfig = [3];
-                $remainingSpeakers = 5;
-            } elseif ($totalSpeakers === 8 && count($gridConfig) === 2 && $gridConfig[0] === 3) {
-                 $gridConfig = [3, 2];
-                 $remainingSpeakers = 3;
-                 break;
-            } elseif ($totalSpeakers === 10 && count($gridConfig) === 1) { // 10 speakers: 3-2-3-2
-                $gridConfig = [3];
-                $remainingSpeakers = 7;
-            } elseif ($totalSpeakers === 10 && count($gridConfig) === 2 && $gridConfig[0] === 3) {
-                 $gridConfig = [3, 2];
-                 $remainingSpeakers = 5;
-            } elseif ($totalSpeakers === 10 && count($gridConfig) === 3 && $gridConfig[0] === 3 && $gridConfig[1] === 2) {
-                 $gridConfig = [3, 2, 3];
-                 $remainingSpeakers = 2;
-                 break;
-            } elseif ($totalSpeakers === 10 && count($gridConfig) === 4 && $gridConfig[0] === 3 && $gridConfig[1] === 2 && $gridConfig[2] === 3) {
-                 $gridConfig = [3, 2, 3, 2];
-                 $remainingSpeakers = 0;
-                 break;
-            }
-
-            // Fallback simple por si la lógica compleja falla o el número es muy grande/pequeño
-            if ($colsInRow <= 0) {
-                if ($remainingSpeakers > 0) {
-                     $gridConfig[] = $remainingSpeakers;
-                }
-                break;
-            }
-        }
-    } else {
-        $gridConfig = [];
-    }
+    $gridConfig = [];
+    $remainingSpeakers = $totalSpeakers;
     
-    // Distribución por defecto o para N<6 que no encajen en los casos anteriores:
-    if (empty($gridConfig) && $totalSpeakers > 0) {
-        $gridConfig = [ceil($totalSpeakers / 3)];
-        while(array_sum($gridConfig) < $totalSpeakers) {
-             $gridConfig[] = ceil(($totalSpeakers - array_sum($gridConfig)) / 3);
-        }
-        
-    } elseif ($totalSpeakers <= 6 && $totalSpeakers > 0) {
-         if ($totalSpeakers <= 3) {
-            $gridConfig = [$totalSpeakers];
-         } else {
-             $gridConfig = [3, $totalSpeakers - 3];
-         }
+    // Intentar llenar filas de 3, la última fila contendrá 1, 2 o 3.
+    while ($remainingSpeakers > 0) {
+        $colsInRow = min($maxCols, $remainingSpeakers);
+        $gridConfig[] = $colsInRow;
+        $remainingSpeakers -= $colsInRow;
     }
-    
-    // Aseguramos la cantidad de oradores en cada fila
+
     $gridRows = array_filter($gridConfig);
     $rows = count($gridRows);
 
-    if ($rows === 0 && $totalSpeakers > 0) {
-         // Fallback de seguridad, por ejemplo si $totalSpeakers=1.
-         $rows = 1;
-         $gridRows = [$totalSpeakers];
-    }
-    
-    error_log("📐 Distribución de oradores: " . implode('-', $gridRows));
-    
     if ($rows > 0) {
 
         // --- 2a. GRID DE TARJETAS ---
+        // Se mantiene el 80% del área inferior para las tarjetas y 20% para sponsors (aproximadamente)
         $gridAreaH = intval($cardsSectionH * 0.80); 
         $gridMarginTB = intval($gridAreaH * 0.03); 
         
@@ -444,7 +365,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 if (!$sp) continue;
 
                 // 1. Crear el fondo BLANCO y redondear esquinas (TARJETA BLANCA LIMPIA)
-                // ... (Lógica de composición de la tarjeta, mantener su código)
                 $cardCanvas = new Imagick();
                 $cardCanvas->newImage($cardW, $cardH, new ImagickPixel('#FFFFFF'));
                 $cardCanvas->setImageFormat('png');
@@ -563,13 +483,12 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             $currentGridY = $baseY + $cardH + $gapY;
 
         }
-        error_log("🎤 Grid de tarjetas DINÁMICO generado. Distribución: " . implode('-', $gridRows));
+        error_log("🎤 Grid de tarjetas SIMPLIFICADO generado. Distribución: " . implode('-', $gridRows));
     }
     
     // --- 2b. BARRA DE SPONSORS ---
 
     // 1. Calcular posición Y: Justo después de la última fila de speakers + un gap
-    // Si no hay speakers, usar la posición predeterminada
     if ($rows > 0) {
         // La altura de la última fila es $cardH, el gap es $gapY.
         $lastRowYEnd = $gridYStart + ($rows - 1) * ($cardH + $gapY) + $cardH;
@@ -588,7 +507,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $cardY = $sponsorCardYStart - $shadowMargin;
     $cornerRadius = 20;
     
-    // ... (Lógica de composición de la tarjeta de Sponsors: Sombra, Tarjeta Blanca) (Mantener su código)
+    // ... (Lógica de composición de la tarjeta de Sponsors: Sombra, Tarjeta Blanca)
     $patrocinadoresCard = new Imagick();
     $patrocinadoresCard->newImage($sponsorCardW, $sponsorCardH, new ImagickPixel('#FFFFFF'));
     $patrocinadoresCard->setImageFormat('png');
@@ -609,7 +528,6 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     $sponsorCanvas = $cardContainer; 
 
     // --- 2.2. CONTENIDO INTERNO: Solo Logos (Grandes) ---
-    // ... (Lógica de composición del contenido de Sponsors: Logos) (Mantener su código)
     $contentCanvas = new Imagick();
     $contentCanvas->newImage($sponsorCardW, $sponsorCardH, new ImagickPixel('transparent'));
     $contentCanvas->setImageFormat('png');
@@ -638,11 +556,11 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
                 $logoW = $logoBase->getImageWidth();
                 
                 if ($currentXWidth + $logoW + ($logoCount > 0 ? $logoSpacing : 0) <= $logosAreaW) {
-                     $logosToCompose[] = $logoBase;
-                     $currentXWidth += $logoW + ($logoCount > 0 ? $logoSpacing : 0);
-                     $logoCount++;
+                    $logosToCompose[] = $logoBase;
+                    $currentXWidth += $logoW + ($logoCount > 0 ? $logoSpacing : 0);
+                    $logoCount++;
                 } else {
-                     $logoBase->destroy();
+                    $logoBase->destroy();
                 }
             }
         }
@@ -665,7 +583,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
             
             $currentX += $logoW + $logoSpacing;
         }
-        error_log("⭐ Tarjeta de patrocinadores horizontal generada (Sin título, $logoCount logos grandes).");
+        error_log("⭐ Tarjeta de patrocinadores horizontal generada ($logoCount logos grandes).");
     } else {
         error_log("⚠️ No hay logos válidos para generar la tarjeta de sponsors.");
     }
@@ -681,7 +599,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
 
     // 📤 Exportar
     $format = strtolower($payload['output']['format'] ?? 'jpg');
-    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v_dinamica.'.$format);
+    $filename = sanitize_file_name(($payload['output']['filename'] ?? 'evento_a4').'_final_v_dinamica_v2.'.$format);
 
     if ($format === 'jpg') {
         $bg_layer = new Imagick();
@@ -710,7 +628,7 @@ function gi_generate_collage_logs(WP_REST_Request $request) {
     wp_generate_attachment_metadata($attach_id, $upload['file']);
     $url = wp_get_attachment_url($attach_id);
 
-    error_log("✅ Imagen generada (Diseño A4 Dinámico): $url");
+    error_log("✅ Imagen generada (Diseño A4 Dinámico V2): $url");
 
     return new WP_REST_Response(['url'=>$url,'attachment_id'=>$attach_id], 200);
 }
